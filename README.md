@@ -42,7 +42,7 @@ iiab-lokole-tests/
 │   └── iiab-configs/     # IIAB local_vars.yml templates
 ├── .github/
 │   ├── workflows/        # GitHub Actions CI/CD
-│   └── actions/          # Re usable composite actions
+│   └── actions/          # Reusable composite actions
 ├── docs/                 # Documentation
 └── roles/                # Git submodule: ansible-role-lokole
 ```
@@ -85,6 +85,8 @@ Label PRs with `test-iiab-integration` to trigger integration tests:
 3. GitHub Actions automatically runs tests
 4. Results posted as comment on PR
 
+**📖 See [docs/SETUP.md](docs/SETUP.md) for complete setup instructions.**
+
 ### Scheduled Tests
 - **Ubuntu Daily**: Weekly check for new Multipass images
 - **Release Validation**: Automatic on Lokole/IIAB releases
@@ -98,7 +100,8 @@ gh workflow run test-ubuntu-lts.yml -f ubuntu_version=26.04 -f use_daily=true
 
 ## Documentation
 
-- [**Setup Guide**](docs/SETUP.md) - Repository configuration and secrets
+- 📋 [**Setup Guide**](docs/SETUP.md) - Repository configuration and secrets
+- 🔗 [**Webhook Configuration**](docs/WEBHOOKS.md) - Cross-repository integration setup
 - [**Running Tests**](docs/RUNNING_TESTS.md) - Local and CI test execution
 - [**Adding Tests**](docs/ADDING_TESTS.md) - Contributing new test scenarios
 - [**Troubleshooting**](docs/TROUBLESHOOTING.md) - Common issues and solutions
@@ -111,10 +114,6 @@ Test results are generated in multiple formats:
 - **JSON**: `results/test-summary-YYYYMMDD.json` (machine-readable, for badges)
 - **JUnit XML**: `results/junit-YYYYMMDD.xml` (CI dashboards)
 
-### Compatibility Matrix
-
-View the latest compatibility matrix at: https://ascoderu.github.io/iiab-lokole-tests
-
 ## Requirements
 
 ### For Local Testing
@@ -125,7 +124,7 @@ View the latest compatibility matrix at: https://ascoderu.github.io/iiab-lokole-
 
 ### For CI/CD
 - GitHub Actions (included)
-- Secrets: `INTEGRATION_TEST_PAT` (Personal Access Token)
+- Secrets: `INTEGRATION_TEST_PAT` (Personal Access Token) - see [docs/SETUP.md](docs/SETUP.md)
 
 ## Cross-Repository Integration
 
@@ -134,26 +133,7 @@ This repository integrates with:
 - [`ascoderu/ansible-role-lokole`](https://github.com/ascoderu/ansible-role-lokole) - Canonical Ansible role
 - [`iiab/iiab`](https://github.com/iiab/iiab) - Internet-in-a-Box platform
 
-### Webhook Setup for Remote PRs
-
-**In `ascoderu/lokole` repository**, add `.github/workflows/trigger-integration-tests.yml`:
-```yaml
-on:
-  pull_request:
-    types: [labeled]
-jobs:
-  dispatch:
-    if: github.event.label.name == 'test-iiab-integration'
-    steps:
-      - uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.INTEGRATION_TEST_PAT }}
-          repository: ascoderu/iiab-lokole-tests
-          event-type: test-integration-lokole
-          client-payload: '{"pr_number":"${{github.event.pull_request.number}}","ref":"${{github.event.pull_request.head.ref}}","sha":"${{github.event.pull_request.head.sha}}"}'
-```
-
-Similar webhook needed in `iiab/iiab` repository.
+**📖 For complete webhook setup instructions, see [docs/SETUP.md](docs/SETUP.md) and [docs/WEBHOOKS.md](docs/WEBHOOKS.md).**
 
 ## Contributing
 
