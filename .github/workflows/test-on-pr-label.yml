@@ -1,0 +1,80 @@
+name: Test on PR Label
+
+on:
+  repository_dispatch:
+    types:
+      - test-integration-lokole
+      - test-integration-iiab
+
+jobs:
+  test-pr:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+      
+      - name: Extract PR details
+        id: pr_details
+        run: |
+          echo "pr_number=${{ github.event.client_payload.pr_number }}" >> $GITHUB_OUTPUT
+          echo "pr_ref=${{ github.event.client_payload.ref }}" >> $GITHUB_OUTPUT
+          echo "pr_sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
+          echo "pr_repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
+      
+      - name: Set up Multipass
+        run: |
+          sudo snap install multipass
+          multipass version
+      
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/scenarios/*.sh
+          chmod +x scripts/vm/multipass/*.sh
+          chmod +x scripts/verify/*.sh
+      
+      - name: Run PR test scenario
+        id: test
+        run: |
+          ./scripts/scenarios/test-pr-branch.sh \
+            --pr-repo "${{ steps.pr_details.outputs.pr_repo }}" \
+            --pr-ref "${{ steps.pr_details.outputs.pr_ref }}" \
+            --pr-sha "${{ steps.pr_details.outputs.pr_sha }}" \
+            --pr-number "${{ steps.pr_details.outputs.pr_number }}" \
+            --ubuntu-version 24.04
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-test-results-${{ steps.pr_details.outputs.pr_number }}
+          path: |
+            *.txt
+            *.log
+      
+      - name: Post results as comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
+          script: |
+            const fs = require('fs');
+            const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
+            let reportContent = '## Integration Test Results\n\n';
+            
+            if (reportFiles.length > 0) {
+              const content = fs.readFileSync(reportFiles[0], 'utf8');
+              reportContent += '```\n' + content + '\n```';
+            } else {
+              reportContent += '⚠️ No test report generated';
+            }
+            
+            const payload = context.payload.client_payload;
+            const [owner, repo] = payload.repo.split('/');
+            
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: payload.pr_number,
+              body: reportContent
+            });
