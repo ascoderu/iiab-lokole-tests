@@ -1,0 +1,42 @@
+# Git
+*.retry
+.ansible/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# Test Results
+results/*.json
+results/*.xml
+results/*.md
+!results/.gitkeep
+
+# Logs
+*.log
+ubuntu-*-test-*.txt
+ubuntu-*-test-*.log
+
+# VM Files  
+.vagrant/
+multipass-*.img
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+/tmp/
+*.tmp
