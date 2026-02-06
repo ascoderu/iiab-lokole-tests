@@ -50,7 +50,7 @@ multipass delete ${VM_NAME} --purge 2>/dev/null || true
 if [ "$USE_DAILY" = true ]; then
     case "$UBUNTU_VERSION" in
         26.04)
-            IMAGE="daily:oracular"
+            IMAGE="daily:26.04"
             ;;
         *)
             IMAGE="daily:${UBUNTU_VERSION}"
