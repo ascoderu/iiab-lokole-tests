@@ -25,32 +25,22 @@ on:
         default: 'master'
 
 jobs:
-  detect-ubuntu-versions:
-    runs-on: ubuntu-latest
-    outputs:
-      versions: ${{ steps.detect.outputs.versions }}
-    
-    steps:
-      - name: Detect available Ubuntu LTS versions
-        id: detect
-        run: |
-          # Query Ubuntu releases
-          VERSIONS='["22.04", "24.04"]'
-          
-          # Check if 26.04 daily is available (pre-release)
-          if multipass find | grep -q "26.04"; then
-            VERSIONS='["22.04", "24.04", "26.04"]'
-          fi
-          
-          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
-  
   test-version:
-    needs: detect-ubuntu-versions
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        ubuntu_version: ${{ fromJson(needs.detect-ubuntu-versions.outputs.versions) }}
+        include:
+          - ubuntu_version: "22.04"
+            python_expected: "3.10"
+            use_daily: false
+          - ubuntu_version: "24.04"
+            python_expected: "3.12"
+            use_daily: false
+          - ubuntu_version: "26.04"
+            python_expected: "3.13"
+            use_daily: true
+            # Note: Will auto-upgrade to 3.14 when available
     
     steps:
       - name: Checkout test repository
@@ -72,6 +62,10 @@ jobs:
         run: |
           ARGS="--ubuntu-version ${{ matrix.ubuntu_version }}"
           
+          if [ "${{ matrix.use_daily }}" = "true" ]; then
+            ARGS="$ARGS --use-daily"
+          fi
+          
           if [ "${{ inputs.lokole_version }}" != "" ]; then
             ARGS="$ARGS --lokole-version ${{ inputs.lokole_version }}"
           fi
@@ -86,9 +80,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ubuntu-${{ matrix.ubuntu_version }}-results
+          name: ubuntu-${{ matrix.ubuntu_version }}-python-${{ matrix.python_expected }}-results
           path: |
             *.txt
+            *.json
+            *.md
             *.log
       
       - name: Create issue on failure
@@ -99,18 +95,41 @@ jobs:
           script: |
             const fs = require('fs');
             let body = '## 🔴 Ubuntu ${{ matrix.ubuntu_version }} Integration Test Failed\n\n';
+            body += '**Expected Python:** ${{ matrix.python_expected }}\n';
             body += '**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n';
             
-            const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
-            if (reportFiles.length > 0) {
-              const content = fs.readFileSync(reportFiles[0], 'utf8');
-              body += '### Test Output\n```\n' + content.slice(0, 5000) + '\n```';
+            // Try to read JSON report first (new format)
+            const jsonFiles = fs.readdirSync('.').filter(f => f.includes('verification') && f.endsWith('.json'));
+            if (jsonFiles.length > 0) {
+              const jsonContent = JSON.parse(fs.readFileSync(jsonFiles[0], 'utf8'));
+              body += `### System Info\n`;
+              body += `- **OS:** Ubuntu ${jsonContent.system.os_version} (${jsonContent.system.os_codename})\n`;
+              body += `- **Python:** ${jsonContent.system.python_version}\n`;
+              body += `- **Summary:** ${jsonContent.summary}\n\n`;
+              body += `### Check Results\n`;
+              body += `- ✅ Passed: ${jsonContent.checks.passed}/${jsonContent.checks.total}\n`;
+              body += `- ❌ Failed: ${jsonContent.checks.failed}/${jsonContent.checks.total}\n`;
+              body += `- ⚠️ Warnings: ${jsonContent.checks.warnings}/${jsonContent.checks.total}\n\n`;
+            }
+            
+            // Include markdown comment if available
+            const mdFiles = fs.readdirSync('.').filter(f => f.includes('pr-comment') && f.endsWith('.md'));
+            if (mdFiles.length > 0) {
+              const mdContent = fs.readFileSync(mdFiles[0], 'utf8');
+              body += mdContent;
+            } else {
+              // Fallback to text report
+              const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
+              if (reportFiles.length > 0) {
+                const content = fs.readFileSync(reportFiles[0], 'utf8');
+                body += '### Test Output\n```\n' + content.slice(0, 5000) + '\n```';
+              }
             }
             
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Integration test failure: Ubuntu ${{ matrix.ubuntu_version }}`,
+              title: `Integration test failure: Ubuntu ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})`,
               body: body,
-              labels: ['bug', 'automated-test-failure']
+              labels: ['bug', 'automated-test-failure', 'ubuntu-${{ matrix.ubuntu_version }}']
             });

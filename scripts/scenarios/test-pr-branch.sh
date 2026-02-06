@@ -9,6 +9,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Defaults
 UBUNTU_VERSION="24.04"
+USE_DAILY=false
 VM_NAME="iiab-lokole-pr-test-$(date +%Y%m%d-%H%M%S)"
 PR_REPO=""
 PR_REF=""
@@ -21,6 +22,10 @@ while [[ $# -gt 0 ]]; do
         --ubuntu-version)
             UBUNTU_VERSION="$2"
             shift 2
+            ;;
+        --use-daily)
+            USE_DAILY=true
+            shift
             ;;
         --vm-name)
             VM_NAME="$2"
@@ -82,6 +87,7 @@ fi
 SCENARIO_CMD="${ROOT_DIR}/scripts/scenarios/fresh-install.sh"
 SCENARIO_CMD="${SCENARIO_CMD} --vm-name ${VM_NAME}"
 SCENARIO_CMD="${SCENARIO_CMD} --ubuntu-version ${UBUNTU_VERSION}"
+[ "$USE_DAILY" = true ] && SCENARIO_CMD="${SCENARIO_CMD} --use-daily"
 [ -n "$LOKOLE_COMMIT" ] && SCENARIO_CMD="${SCENARIO_CMD} --lokole-commit ${LOKOLE_COMMIT}"
 [ -n "$IIAB_PR" ] && SCENARIO_CMD="${SCENARIO_CMD} --iiab-pr ${IIAB_PR}"
 

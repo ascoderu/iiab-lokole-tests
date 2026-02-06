@@ -38,12 +38,12 @@ jobs:
           REPO="${{ steps.merge_details.outputs.repo }}"
           
           if [[ "$REPO" == *"lokole"* ]]; then
-            # Test merged Lokole commit
+            # Test merged Lokole commit on Ubuntu 24.04 (Python 3.12)
             ./scripts/scenarios/fresh-install.sh \
               --ubuntu-version 24.04 \
               --lokole-commit ${{ steps.merge_details.outputs.sha }}
           elif [[ "$REPO" == *"iiab"* ]]; then
-            # Test merged IIAB branch
+            # Test merged IIAB branch on Ubuntu 24.04 (Python 3.12)
             ./scripts/scenarios/fresh-install.sh \
               --ubuntu-version 24.04 \
               --iiab-branch ${{ steps.merge_details.outputs.branch }}
@@ -56,6 +56,8 @@ jobs:
           name: post-merge-results
           path: |
             *.txt
+            *.json
+            *.md
             *.log
       
       - name: Create issue on failure
@@ -73,11 +75,35 @@ jobs:
             body += `**Commit:** ${payload.sha}\n`;
             body += `**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n`;
             
-            const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
-            if (reportFiles.length > 0) {
-              const content = fs.readFileSync(reportFiles[0], 'utf8');
-              body += '### Test Output\n```\n' + content.slice(0, 5000) + '\n```';
+            // Try to read JSON report
+            const jsonFiles = fs.readdirSync('.').filter(f => f.includes('verification') && f.endsWith('.json'));
+            if (jsonFiles.length > 0) {
+              const jsonContent = JSON.parse(fs.readFileSync(jsonFiles[0], 'utf8'));
+              body += `### System Info\n`;
+              body += `- **OS:** Ubuntu ${jsonContent.system.os_version}\n`;
+              body += `- **Python:** ${jsonContent.system.python_version}\n`;
+              body += `- **Summary:** ${jsonContent.summary}\n\n`;
             }
+            
+            // Include markdown report
+            const mdFiles = fs.readdirSync('.').filter(f => f.includes('pr-comment') && f.endsWith('.md'));
+            if (mdFiles.length > 0) {
+              body += fs.readFileSync(mdFiles[0], 'utf8');
+            } else {
+              const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
+              if (reportFiles.length > 0) {
+                const content = fs.readFileSync(reportFiles[0], 'utf8');
+                body += '### Test Output\n```\n' + content.slice(0, 5000) + '\n```';
+              }
+            }
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Post-merge test failure: ${payload.repo}@${payload.sha.substring(0, 7)}`,
+              body: body,
+              labels: ['bug', 'automated-test-failure', 'post-merge']
+            });
             
             await github.rest.issues.create({
               owner: context.repo.owner,

@@ -16,6 +16,9 @@ results/*.json
 results/*.xml
 results/*.md
 !results/.gitkeep
+fresh-install-*.txt
+/tmp/lokole-verification-*.json
+/tmp/pr-comment-*.md
 
 # Logs
 *.log

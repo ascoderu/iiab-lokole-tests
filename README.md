@@ -9,7 +9,8 @@ Automated integration testing suite for [Lokole](https://github.com/ascoderu/lok
 - **Fresh IIAB Installations**: Complete installation with Lokole from scratch
 - **Lokole Upgrades**: Testing upgrade paths from older versions
 - **Ubuntu LTS Releases**: 22.04, 24.04, 26.04 (stable + daily pre-releases)
-- **Python Compatibility**: Validating Python 3.9-3.13 support
+- **Python Compatibility**: Validating Python 3.10-3.14+ support with matrix testing
+- **Comprehensive Verification**: Services, sockets, web access, logs, and error detection
 - **Hardware Platforms**: VMs (Multipass/GitHub Actions) and physical Raspberry Pi
 
 ## Quick Start
@@ -26,6 +27,24 @@ cd iiab-lokole-tests
 ./run-complete-test.sh
 ```
 
+## Python 3.14+ Support
+
+This test suite supports the full range of Python versions across Ubuntu LTS releases:
+
+| Ubuntu | Python | Status | Testing Method |
+|--------|--------|--------|----------------|
+| 22.04  | 3.10   | ✅ Stable | Standard images |
+| 24.04  | 3.12   | ✅ Stable | Standard images |
+| 26.04  | 3.13   | ⚙️ Pre-release | Daily images (`--use-daily`) |
+| 26.04  | 3.14+  | 🔮 Future | Auto-supported when available |
+
+**Matrix Testing**: All PR tests run across Ubuntu 22.04, 24.04, and 26.04 (daily) to ensure comprehensive Python version compatibility. This ensures Lokole works seamlessly as Ubuntu evolves to Python 3.14 and beyond.
+
+**Testing pre-release Ubuntu:**
+```bash
+./scripts/scenarios/fresh-install.sh --ubuntu-version 26.04 --use-daily
+```
+
 ## Repository Structure
 
 ```
@@ -33,7 +52,7 @@ iiab-lokole-tests/
 ├── scripts/
 │   ├── vm/               # VM provisioning (Multipass, Vagrant)
 │   ├── monitoring/       # Installation monitoring and progress tracking
-│   ├── verify/           # Post-installation verification
+│   ├── verify/           # Comprehensive verification (JSON reports, PR comments)
 │   ├── scenarios/        # Complete test scenarios
 │   └── analyze/          # Log analysis and reporting
 ├── environments/
@@ -82,8 +101,14 @@ Validates new releases work with IIAB:
 Label PRs with `test-iiab-integration` to trigger integration tests:
 1. Go to Lokole or IIAB PR
 2. Add label: `test-iiab-integration`
-3. GitHub Actions automatically runs tests
-4. Results posted as comment on PR
+3. GitHub Actions automatically runs tests across **Ubuntu 22.04, 24.04, and 26.04**
+4. Comprehensive results posted as formatted comment on PR with:
+   - System info (OS, Python version)
+   - Service status (all 4 Lokole services)
+   - Socket permissions
+   - Web access tests
+   - Log error analysis
+   - Troubleshooting hints
 
 **📖 See [docs/SETUP.md](docs/SETUP.md) for complete setup instructions.**
 
@@ -110,17 +135,28 @@ gh workflow run test-ubuntu-lts.yml -f ubuntu_version=26.04 -f use_daily=true
 ## Test Results & Reports
 
 Test results are generated in multiple formats:
-- **Markdown**: `results/test-report-YYYYMMDD.md` (human-readable)
-- **JSON**: `results/test-summary-YYYYMMDD.json` (machine-readable, for badges)
-- **JUnit XML**: `results/junit-YYYYMMDD.xml` (CI dashboards)
+- **JSON**: `/tmp/lokole-verification-<vm_name>.json` (structured test data)
+- **Markdown**: `/tmp/pr-comment-<vm_name>.md` (PR comments with icons and tables)
+- **Text**: `fresh-install-<version>-<timestamp>.txt` (human-readable artifacts)
+
+### Comprehensive Verification
+
+Each test run performs comprehensive checks:
+- **System Info**: OS version, Python version (3.10-3.14+), kernel
+- **Services**: Individual status for lokole-gunicorn, lokole-celery-beat, lokole-celery-worker, lokole-restarter
+- **Socket**: Existence, permissions, www-data group membership
+- **Web Access**: HTTP response codes (200/502/503/000) with interpretation
+- **Logs**: NGINX errors, supervisor failures, Lokole exceptions
+- **Summary**: Pass/fail/warning counts with automated troubleshooting hints
 
 ## Requirements
 
 ### For Local Testing
 - **Multipass**: VM management (or Vagrant/Docker)
 - **Ansible**: >= 2.11
-- **Python**: >= 3.9
+- **Python**: >= 3.10 (3.12+ recommended)
 - **Bash**: >= 4.0
+- **jq**: JSON processing for reports
 
 ### For CI/CD
 - GitHub Actions (included)

@@ -9,6 +9,17 @@ on:
 jobs:
   test-pr:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu_version: "22.04"
+            python_expected: "3.10"
+          - ubuntu_version: "24.04"
+            python_expected: "3.12"
+          - ubuntu_version: "26.04"
+            python_expected: "3.13"
+            use_daily: true
     
     steps:
       - name: Checkout test repository
@@ -36,20 +47,27 @@ jobs:
       - name: Run PR test scenario
         id: test
         run: |
-          ./scripts/scenarios/test-pr-branch.sh \
-            --pr-repo "${{ steps.pr_details.outputs.pr_repo }}" \
-            --pr-ref "${{ steps.pr_details.outputs.pr_ref }}" \
-            --pr-sha "${{ steps.pr_details.outputs.pr_sha }}" \
-            --pr-number "${{ steps.pr_details.outputs.pr_number }}" \
-            --ubuntu-version 24.04
+          ARGS="--pr-repo ${{ steps.pr_details.outputs.pr_repo }}"
+          ARGS="$ARGS --pr-ref ${{ steps.pr_details.outputs.pr_ref }}"
+          ARGS="$ARGS --pr-sha ${{ steps.pr_details.outputs.pr_sha }}"
+          ARGS="$ARGS --pr-number ${{ steps.pr_details.outputs.pr_number }}"
+          ARGS="$ARGS --ubuntu-version ${{ matrix.ubuntu_version }}"
+          
+          if [ "${{ matrix.use_daily }}" = "true" ]; then
+            ARGS="$ARGS --use-daily"
+          fi
+          
+          ./scripts/scenarios/test-pr-branch.sh $ARGS
       
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr-test-results-${{ steps.pr_details.outputs.pr_number }}
+          name: pr-${{ steps.pr_details.outputs.pr_number }}-ubuntu-${{ matrix.ubuntu_version }}-results
           path: |
             *.txt
+            *.json
+            *.md
             *.log
       
       - name: Post results as comment
@@ -59,18 +77,31 @@ jobs:
           github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
           script: |
             const fs = require('fs');
-            const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
-            let reportContent = '## Integration Test Results\n\n';
-            
-            if (reportFiles.length > 0) {
-              const content = fs.readFileSync(reportFiles[0], 'utf8');
-              reportContent += '```\n' + content + '\n```';
-            } else {
-              reportContent += '⚠️ No test report generated';
-            }
-            
             const payload = context.payload.client_payload;
             const [owner, repo] = payload.repo.split('/');
+            
+            // Read markdown comment
+            const mdFiles = fs.readdirSync('.').filter(f => f.includes('pr-comment') && f.endsWith('.md'));
+            let reportContent = '';
+            
+            if (mdFiles.length > 0) {
+              reportContent = fs.readFileSync(mdFiles[0], 'utf8');
+              // Add matrix info header
+              reportContent = `## Test Result for Ubuntu ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})\n\n` + reportContent;
+            } else {
+              // Fallback to basic report
+              reportContent = '## Integration Test Results\n\n';
+              reportContent += '**Ubuntu:** ${{ matrix.ubuntu_version }}\n';
+              reportContent += '**Expected Python:** ${{ matrix.python_expected }}\n\n';
+              
+              const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
+              if (reportFiles.length > 0) {
+                const content = fs.readFileSync(reportFiles[0], 'utf8');
+                reportContent += '```\n' + content + '\n```';
+              } else {
+                reportContent += '⚠️ No test report generated';
+              }
+            }
             
             await github.rest.issues.createComment({
               owner: owner,

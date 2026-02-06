@@ -93,20 +93,55 @@ echo ""
 echo "🔍 PHASE 3: Verifying installation..."
 echo "==============================================================================="
 
-REPORT_FILE="fresh-install-${UBUNTU_VERSION}-$(date +%Y%m%d-%H%M%S).txt"
-${ROOT_DIR}/scripts/verify/verify-installation.sh --vm-name ${VM_NAME} --output-file "${REPORT_FILE}"
+JSON_REPORT="/tmp/lokole-verification-${VM_NAME}.json"
+TEXT_REPORT="fresh-install-${UBUNTU_VERSION}-$(date +%Y%m%d-%H%M%S).txt"
+MD_REPORT="/tmp/pr-comment-${VM_NAME}.md"
+
+# Run comprehensive verification
+${ROOT_DIR}/scripts/verify/comprehensive-check.sh ${VM_NAME} ${JSON_REPORT}
+VERIFY_EXIT=$?
+
+# Generate markdown PR comment
+${ROOT_DIR}/scripts/verify/generate-pr-comment.sh ${JSON_REPORT} ${MD_REPORT}
+
+# Create text report for artifacts
+{
+    echo "IIAB-Lokole Integration Test Report"
+    echo "===================================="
+    echo ""
+    echo "VM Name: ${VM_NAME}"
+    echo "Ubuntu Version: ${UBUNTU_VERSION}"
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo ""
+    cat ${MD_REPORT}
+} > "${TEXT_REPORT}"
 
 # Final Summary
 echo ""
-echo "🎊 TEST COMPLETE!"
+if [ $VERIFY_EXIT -eq 0 ]; then
+    echo "🎊 TEST COMPLETE! ✅"
+else
+    echo "⚠️  TEST COMPLETED WITH ISSUES"
+fi
 echo "==============================================================================="
 echo "VM Name: ${VM_NAME}"
-echo "Report: ${REPORT_FILE}"
+echo "Reports:"
+echo "  - JSON: ${JSON_REPORT}"
+echo "  - Markdown: ${MD_REPORT}"
+echo "  - Text: ${TEXT_REPORT}"
 echo ""
-echo "Key Results:"
-grep -E "✅|❌|⚠️|🎉" "${REPORT_FILE}" | tail -10
+echo "Summary:"
+jq -r '.summary' ${JSON_REPORT}
+echo ""
+echo "Checks:"
+jq -r '"  Passed:   \(.checks.passed)/\(.checks.total)"' ${JSON_REPORT}
+jq -r '"  Failed:   \(.checks.failed)/\(.checks.total)"' ${JSON_REPORT}
+jq -r '"  Warnings: \(.checks.warnings)/\(.checks.total)"' ${JSON_REPORT}
 echo ""
 echo "💡 Next Steps:"
-echo "1. Review full report: cat ${REPORT_FILE}"
-echo "2. Access VM: multipass shell ${VM_NAME}"
-echo "3. Clean up: multipass delete ${VM_NAME} --purge"
+echo "1. Review full report: cat ${TEXT_REPORT}"
+echo "2. Review JSON report: cat ${JSON_REPORT}"
+echo "3. Access VM: multipass shell ${VM_NAME}"
+echo "4. Clean up: multipass delete ${VM_NAME} --purge"
+
+exit $VERIFY_EXIT
