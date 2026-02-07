@@ -20,6 +20,17 @@ LOCATION="eastus"
 SP_NAME="iiab-lokole-github-actions"
 OUTPUT_FILE="${ROOT_DIR}/.azure-credentials.json"
 
+# Parse arguments
+NON_INTERACTIVE=false
+for arg in "$@"; do
+    case $arg in
+        --non-interactive|-y|--yes)
+            NON_INTERACTIVE=true
+            shift
+            ;;
+    esac
+done
+
 echo -e "${BLUE}🔐 Azure Setup for GitHub Actions Runners${NC}"
 echo "========================================================"
 echo ""
@@ -43,19 +54,23 @@ echo -e "${BLUE}📝 Step 1: Azure Login${NC}"
 echo "----------------------------------------"
 
 if az account show &> /dev/null; then
-    echo -e "${GREEN}✓${NC} Already logged in as: $(az account show --query 'user.name' -o tsv)"
-    echo ""
-    read -p "Use this account? (y/n) " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Logging out..."
-        az logout
+    CURRENT_USER=$(az account show --query 'user.name' -o tsv)
+    echo -e "${GREEN}✓${NC} Already logged in as: ${CURRENT_USER}"
+    
+    if [ "$NON_INTERACTIVE" = false ]; then
         echo ""
-        echo "Please log in:"
-        az login
+        read -p "Use this account? (y/n) " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Logging out..."
+            az logout
+            echo ""
+            echo "Please log in:"
+            az login
+        fi
     fi
 else
-    echo "Please log in to Azure:"
+    echo "Not logged in. Please log in to Azure:"
     echo ""
     az login
 fi
@@ -71,7 +86,8 @@ SUBSCRIPTION_COUNT=$(az account list --query 'length(@)' -o tsv)
 if [ "$SUBSCRIPTION_COUNT" -eq 0 ]; then
     echo -e "${RED}❌ No Azure subscriptions found${NC}"
     exit 1
-elif [ "$SUBSCRIPTION_COUNT" -eq 1 ]; then
+elif [ "$SUBSCRIPTION_COUNT" -eq 1 ] || [ "$NON_INTERACTIVE" = true ]; then
+    # Use default subscription in non-interactive mode or if only one exists
     SUBSCRIPTION_ID=$(az account show --query 'id' -o tsv)
     SUBSCRIPTION_NAME=$(az account show --query 'name' -o tsv)
     echo -e "${GREEN}✓${NC} Using subscription: ${SUBSCRIPTION_NAME}"
@@ -120,17 +136,23 @@ SP_APP_ID=$(az ad sp list --display-name "$SP_NAME" --query '[0].appId' -o tsv 2
 if [ -n "$SP_APP_ID" ] && [ "$SP_APP_ID" != "null" ]; then
     echo -e "${YELLOW}⚠️  Service Principal '${SP_NAME}' already exists${NC}"
     echo "  App ID: ${SP_APP_ID}"
-    echo ""
-    read -p "Delete and recreate? (y/n) " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "Deleting existing service principal..."
-        az ad sp delete --id "$SP_APP_ID"
-        SP_APP_ID=""
+    
+    if [ "$NON_INTERACTIVE" = false ]; then
+        echo ""
+        read -p "Delete and recreate? (y/n) " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "Deleting existing service principal..."
+            az ad sp delete --id "$SP_APP_ID"
+            SP_APP_ID=""
+        fi
+    else
+        echo "  Using existing service principal in non-interactive mode"
+        echo -e "${YELLOW}⚠️  Note: Existing credentials will be reused. Delete manually if you need new credentials.${NC}"
     fi
 fi
 
-if [ -z "$SP_APP_ID" ]; then
+if [ -z "$SP_APP_ID" ] || [ "$SP_APP_ID" = "null" ]; then
     echo "Creating new service principal..."
     
     # Create SP with contributor role scoped to resource group
@@ -158,13 +180,19 @@ if [ -z "$SP_APP_ID" ]; then
 else
     echo "Using existing service principal"
     echo ""
-    echo -e "${YELLOW}⚠️  Cannot retrieve existing secret${NC}"
-    echo "If you need the secret, delete and recreate the service principal"
-    echo ""
     
-    # Try to get tenant ID
-    SP_TENANT_ID=$(az account show --query 'tenantId' -o tsv)
-    SP_CLIENT_SECRET="<existing-secret-not-retrievable>"
+    # Try to load from existing credentials file
+    if [ -f "$OUTPUT_FILE" ]; then
+        echo -e "${GREEN}✓${NC} Loading credentials from: ${OUTPUT_FILE}"
+        SP_CLIENT_SECRET=$(jq -r '.clientSecret' "$OUTPUT_FILE")
+        SP_TENANT_ID=$(jq -r '.tenantId' "$OUTPUT_FILE")
+    else
+        echo -e "${YELLOW}⚠️  Cannot retrieve existing secret (not in ${OUTPUT_FILE})${NC}"
+        echo "If you need the secret, delete the service principal and recreate it"
+        SP_TENANT_ID=$(az account show --query 'tenantId' -o tsv)
+        SP_CLIENT_SECRET="<existing-secret-not-retrievable>"
+    fi
+    echo ""
 fi
 
 # Display GitHub Secrets configuration
