@@ -89,7 +89,10 @@ jobs:
   # Job 2: Run tests on Azure Spot VMs
   test-on-azure-runners:
     needs: provision-runners
-    runs-on: [self-hosted, azure-spot, ubuntu-${{ matrix.ubuntu_version }}]
+    runs-on:
+      - self-hosted
+      - azure-spot
+      - ubuntu-${{ matrix.ubuntu_version }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
