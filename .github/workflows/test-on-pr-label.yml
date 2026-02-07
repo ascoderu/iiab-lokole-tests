@@ -44,6 +44,7 @@ jobs:
         id: provision
         env:
           GITHUB_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           PR_NUMBER="${{ github.event.client_payload.pr_number }}"
           
