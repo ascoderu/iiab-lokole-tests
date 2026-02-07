@@ -9,6 +9,7 @@ This document provides an overview of the Azure ephemeral self-hosted runner inf
 ### Phase 1: Local Resource Measurement ✅
 
 **Created:**
+
 - `scripts/monitoring/measure-resources.sh` - Monitors CPU, RAM, disk, and I/O during test execution
 - `docs/AZURE-RUNNER-SIZING.md` - Comprehensive VM sizing guide with cost analysis
 - `results/resource-measurements/` - Directory for measurement outputs
@@ -16,6 +17,7 @@ This document provides an overview of the Azure ephemeral self-hosted runner inf
 **Purpose:** Measure actual resource requirements before provisioning Azure VMs to ensure cost-optimal sizing.
 
 **Next Step:** Run measurement:
+
 ```bash
 ./scripts/monitoring/measure-resources.sh --ubuntu-version 24.04
 ```
@@ -23,6 +25,7 @@ This document provides an overview of the Azure ephemeral self-hosted runner inf
 ### Phase 2: Azure Authentication & Setup ✅
 
 **Created:**
+
 - `scripts/azure/login.sh` - Interactive Azure login and service principal creation
 - `.azure-credentials.json` - Generated credentials file (gitignored)
 - `scripts/azure/set-github-secrets.sh` - Auto-generated helper for setting GitHub secrets
@@ -30,6 +33,7 @@ This document provides an overview of the Azure ephemeral self-hosted runner inf
 **Purpose:** Secure Azure authentication with minimal permissions (scoped to single resource group).
 
 **Next Step:** Setup Azure:
+
 ```bash
 ./scripts/azure/login.sh
 ```
@@ -37,6 +41,7 @@ This document provides an overview of the Azure ephemeral self-hosted runner inf
 ### Phase 3: Infrastructure as Code (Bicep) ✅
 
 **Created:**
+
 - `infrastructure/azure/main.bicep` - Complete VM provisioning template (400+ lines)
   - Spot VM configuration with 70% cost savings
   - Network security group with SSH + HTTPS
@@ -46,12 +51,14 @@ This document provides an overview of the Azure ephemeral self-hosted runner inf
 - `infrastructure/azure/parameters.example.json` - Parameter file template
 
 **Features:**
+
 - Ephemeral runners (self-destruct after one job)
 - Spot VM pricing (~$0.0045/hour vs $0.015/hour regular)
 - Automatic resource deletion (VM, disk, NIC all deleted together)
 - Support for Ubuntu 22.04 and 24.04 LTS
 
 **Next Step:** Validate Bicep locally:
+
 ```bash
 az deployment group what-if \
   --resource-group iiab-lokole-tests-rg \
@@ -61,6 +68,7 @@ az deployment group what-if \
 ### Phase 4: VM Lifecycle Orchestration ✅
 
 **Created:**
+
 - `scripts/azure/provision-runner.sh` - End-to-end VM provisioning and cleanup
   - Deploy Bicep template
   - Wait for runner registration
@@ -72,6 +80,7 @@ az deployment group what-if \
 **Purpose:** Automated VM lifecycle management for GitHub Actions.
 
 **Next Step:** Test local provisioning:
+
 ```bash
 export GITHUB_TOKEN="${INTEGRATION_TEST_PAT}"
 ./scripts/azure/provision-runner.sh --pr-number 999 --no-cleanup
@@ -80,6 +89,7 @@ export GITHUB_TOKEN="${INTEGRATION_TEST_PAT}"
 ### Phase 5: GitHub Actions Integration ✅
 
 **Created:**
+
 - `.github/workflows/test-on-azure-runner.example.yml` - Complete workflow example
   - Job 1: Provision VM on GitHub-hosted runner
   - Job 2: Run tests on Azure runner
@@ -92,17 +102,20 @@ export GITHUB_TOKEN="${INTEGRATION_TEST_PAT}"
 ### Phase 6: Cost Monitoring & Security ✅
 
 **Created:**
+
 - `scripts/azure/cost-report.sh` - Cost analysis and projections
 - Comprehensive security documentation
 - Service principal with minimal permissions (Contributor on single resource group only)
 
 **Security Features:**
+
 - No access outside resource group
 - Ephemeral runners (no state persistence)
 - Auto-cleanup prevents cost leaks
 - Network security group restricts access
 
 **Next Step:** Monitor costs:
+
 ```bash
 ./scripts/azure/cost-report.sh
 ```
@@ -110,9 +123,10 @@ export GITHUB_TOKEN="${INTEGRATION_TEST_PAT}"
 ### Documentation ✅
 
 **Created:**
+
 - `docs/AZURE-SETUP.md` - Complete setup and usage guide (400+ lines)
 - `docs/AZURE-RUNNER-SIZING.md` - VM sizing recommendations (300+ lines)
-- This file  - Implementation summary
+- This file - Implementation summary
 
 ## Architecture Overview
 
@@ -164,14 +178,15 @@ export GITHUB_TOKEN="${INTEGRATION_TEST_PAT}"
 
 ### Expected Monthly Costs
 
-| Scenario | Runs/Month | Runtime | Monthly Cost |
-|----------|------------|---------|--------------|
-| **Light usage** (10 PR-triggered tests) | 10 | 60 min | **$0.05** (~5¢) |
-| **Moderate** (20 tests + scheduled) | 20 | 60 min | **$0.09** (~9¢) |
-| **Heavy development** (50 tests) | 50 | 60 min | **$0.23** (~23¢) |
-| **Daily scheduled** (30 tests) | 30 | 60 min | **$0.14** (~14¢) |
+| Scenario                                | Runs/Month | Runtime | Monthly Cost     |
+| --------------------------------------- | ---------- | ------- | ---------------- |
+| **Light usage** (10 PR-triggered tests) | 10         | 60 min  | **$0.05** (~5¢)  |
+| **Moderate** (20 tests + scheduled)     | 20         | 60 min  | **$0.09** (~9¢)  |
+| **Heavy development** (50 tests)        | 50         | 60 min  | **$0.23** (~23¢) |
+| **Daily scheduled** (30 tests)          | 30         | 60 min  | **$0.14** (~14¢) |
 
 **Comparison:**
+
 - Current: GitHub Actions (2,000 free minutes, then $0.008/min)
 - Proposed: Azure Spot VMs ($0.0045/hour when running, $0 when not)
 - **Savings**: ~60-90% vs regular Azure VMs, better resource control
@@ -292,6 +307,7 @@ gh workflow run test-on-azure-runner.example.yml \
 **Option B: Adapt existing workflow**
 
 Replace `.github/workflows/test-on-pr-label.yml` with Azure runner version:
+
 - Keep Job 1 (provision) as-is from example
 - Update Job 2 `runs-on: [self-hosted, azure-spot]`
 - Add Job 3 (cleanup) from example
@@ -314,16 +330,19 @@ Replace `.github/workflows/test-on-pr-label.yml` with Azure runner version:
 ### Common Issues
 
 **1. "Azure CLI not found"**
+
 ```bash
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 ```
 
 **2. "Not logged in to Azure"**
+
 ```bash
 ./scripts/azure/login.sh
 ```
 
 **3. "GITHUB_TOKEN required"**
+
 ```bash
 # Add to .env file
 echo "INTEGRATION_TEST_PAT=ghp_your_token_here" >> .env
@@ -333,16 +352,19 @@ export GITHUB_TOKEN="ghp_your_token_here"
 ```
 
 **4. "VM provisioning fails"**
+
 - Check quota: `az vm list-usage --location eastus --output table`
 - Try smaller VM: `--vm-size Standard_B1s`
 - Try different region: Edit `LOCATION` in `provision-runner.sh`
 
 **5. "Runner doesn't register"**
+
 - SSH to VM: `ssh -i .ssh/azure-runner-key azureuser@<VM_IP>`
 - Check logs: `sudo journalctl -u actions.runner.* -f`
 - Verify token: `curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/ascoderu/iiab-lokole-tests`
 
 **6. "High costs"**
+
 - List VMs: `az vm list --resource-group iiab-lokole-tests-rg --output table`
 - Cleanup: `. /scripts/azure/cleanup-orphaned-vms.sh`
 - Review: `/scripts/azure/cost-report.sh`

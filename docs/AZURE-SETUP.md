@@ -43,6 +43,7 @@ Login and create service principal with minimal permissions:
 ```
 
 This script:
+
 - Logs you into Azure
 - Creates resource group `iiab-lokole-tests-rg`
 - Creates service principal scoped to that resource group only
@@ -56,12 +57,14 @@ Add these secrets to your repository:
 https://github.com/ascoderu/iiab-lokole-tests/settings/secrets/actions
 
 **Or via CLI (automated):**
+
 ```bash
 # The login script creates this helper
 ./scripts/azure/set-github-secrets.sh
 ```
 
 Required secrets:
+
 - `AZURE_SUBSCRIPTION_ID`
 - `AZURE_CLIENT_ID`
 - `AZURE_CLIENT_SECRET`
@@ -89,6 +92,7 @@ az vm delete --resource-group iiab-lokole-tests-rg --name gh-runner-<RUN_ID> --y
 ### Step 5: Integrate with GitHub Actions
 
 See `.github/workflows/test-on-pr-label-azure.yml` for example workflow that:
+
 1. Provisions Azure VM
 2. Waits for runner registration
 3. Runs tests on the runner
@@ -118,38 +122,39 @@ Test complete → runner unregisters → VM self-destructs
 
 **Configuration**: Standard_B2s, East US, Spot pricing
 
-| Scenario | Runs/Month | Runtime | Monthly Cost |
-|----------|------------|---------|--------------|
-| Light usage (PR-triggered) | 10 | 60 min | $0.045 (~5¢) |
-| Moderate (PR + scheduled) | 20 | 60 min | $0.09 (~9¢) |
-| Heavy development | 50 | 60 min | $0.23 (~23¢) |
-| Daily scheduled tests | 30 | 60 min | $0.14 (~14¢) |
+| Scenario                   | Runs/Month | Runtime | Monthly Cost |
+| -------------------------- | ---------- | ------- | ------------ |
+| Light usage (PR-triggered) | 10         | 60 min  | $0.045 (~5¢) |
+| Moderate (PR + scheduled)  | 20         | 60 min  | $0.09 (~9¢)  |
+| Heavy development          | 50         | 60 min  | $0.23 (~23¢) |
+| Daily scheduled tests      | 30         | 60 min  | $0.14 (~14¢) |
 
 **Comparison:**
+
 - GitHub Actions: 2,000 free minutes/month, then $0.008/minute
 - Azure Spot: ~$0.0045/hour (ephemeral, only charged when running)
 - **Savings**: 60-90% vs regular Azure VMs, infinite vs GitHub minutes
 
 ### Spot vs Regular VMs
 
-| Type | Price/Hour | Monthly* | Eviction Rate | Use Case |
-|------|------------|----------|---------------|----------|
-| **Spot B2s** | $0.0045 | $3.29 | ~5% | **Recommended** for CI/CD |
-| Regular B2s | $0.015 | $10.95 | 0% | Production deployments |
-| Spot D2s_v3 | $0.029 | $21.02 | ~10% | CPU-intensive tests |
+| Type         | Price/Hour | Monthly\* | Eviction Rate | Use Case                  |
+| ------------ | ---------- | --------- | ------------- | ------------------------- |
+| **Spot B2s** | $0.0045    | $3.29     | ~5%           | **Recommended** for CI/CD |
+| Regular B2s  | $0.015     | $10.95    | 0%            | Production deployments    |
+| Spot D2s_v3  | $0.029     | $21.02    | ~10%          | CPU-intensive tests       |
 
-*Full-time pricing (730 hours). Actual costs much lower for ephemeral runners.
+\*Full-time pricing (730 hours). Actual costs much lower for ephemeral runners.
 
 ## Infrastructure Components
 
-| Component | Purpose | Cost | Lifecycle |
-|-----------|---------|------|-----------|
-| **VM (Spot)** | Runner host | $0.0045/hr | Created per job, destroyed after |
-| **OS Disk (SSD)** | VM boot disk | Included | Deleted with VM |
-| **Public IP (Standard)** | SSH access | $0.005/hr | Deleted with VM |
-| **Network Interface** | VM network | Free | Deleted with VM |
-| **Virtual Network** | Shared network | Free | Persistent |
-| **Resource Group** | Container | Free | Persistent |
+| Component                | Purpose        | Cost       | Lifecycle                        |
+| ------------------------ | -------------- | ---------- | -------------------------------- |
+| **VM (Spot)**            | Runner host    | $0.0045/hr | Created per job, destroyed after |
+| **OS Disk (SSD)**        | VM boot disk   | Included   | Deleted with VM                  |
+| **Public IP (Standard)** | SSH access     | $0.005/hr  | Deleted with VM                  |
+| **Network Interface**    | VM network     | Free       | Deleted with VM                  |
+| **Virtual Network**      | Shared network | Free       | Persistent                       |
+| **Resource Group**       | Container      | Free       | Persistent                       |
 
 **Total per test run**: ~$0.0045/hour × 1 hour = **$0.0045** (~0.5¢)
 
@@ -158,16 +163,19 @@ Test complete → runner unregisters → VM self-destructs
 ### Service Principal Permissions
 
 The service principal has **Contributor** role scoped to:
+
 ```
 /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/iiab-lokole-tests-rg
 ```
 
 **Can do:**
+
 - Create/delete VMs, disks, NICs in resource group
 - Manage network security groups
 - Read resource group properties
 
 **Cannot do:**
+
 - Access other resource groups
 - Modify subscriptionsubscription settings
 - Create/delete resource groups
@@ -184,11 +192,13 @@ The service principal has **Contributor** role scoped to:
 ### Network Security
 
 Default NSG rules:
+
 - Inbound: SSH (port 22) only - **Restrict to your IP for production**
 - Outbound: HTTP/HTTPS only (GitHub, package repos)
 - No public services exposed
 
 **Hardening for production:**
+
 ```bash
 # Edit infrastructure/azure/main.bicep
 # Line ~220: Change sourceAddressPrefix from '*' to your IP
@@ -245,6 +255,7 @@ az ad sp delete --id $(az ad sp list --display-name iiab-lokole-github-actions -
 **Symptoms:** `az deployment group create` errors
 
 **Solutions:**
+
 1. Check quota: `az vm list-usage --location eastus --output table`
 2. Try different region: `--location westus2`
 3. Try smaller VM: `--vm-size Standard_B1s`
@@ -255,6 +266,7 @@ az ad sp delete --id $(az ad sp list --display-name iiab-lokole-github-actions -
 **Symptoms:** Timeout waiting for runner, VM visible in Azure but not in GitHub
 
 **Debug:**
+
 ```bash
 # SSH to VM
 ssh -i .ssh/azure-runner-key azureuser@<VM_IP>
@@ -270,6 +282,7 @@ sudo cat /var/log/azure/Microsoft.Azure.Extensions.CustomScript/*/extension.log
 ```
 
 **Common issues:**
+
 - GitHub token expired/invalid
 - Runner already registered with same name
 - GitHub API rate limit exceeded
@@ -279,6 +292,7 @@ sudo cat /var/log/azure/Microsoft.Azure.Extensions.CustomScript/*/extension.log
 **Symptoms:** Job fails mid-test with "Runner lost communication"
 
 **Solution:** GitHub Actions automatically retries. If eviction rate is %high (>10%), consider:
+
 1. Setting `--max-spot-price -1` (pay up to regular price = lower eviction)
 2. Using regular VM for critical PRs
 3. Trying different region
@@ -288,6 +302,7 @@ sudo cat /var/log/azure/Microsoft.Azure.Extensions.CustomScript/*/extension.log
 **Symptoms:** Azure bill higher than expected
 
 **Debug:**
+
 ```bash
 # List all VMs (should be empty between tests)
 az vm list --resource-group iiab-lokole-tests-rg --output table
@@ -300,6 +315,7 @@ az consumption usage list --start-date $(date -d '7 days ago' +%Y-%m-%d)
 ```
 
 **Solutions:**
+
 - Run cleanup script: `./scripts/azure/cleanup-orphaned-vms.sh`
 - Set up Azure budget alerts
 - Use sequential testing (one VM) instead of parallel
@@ -344,7 +360,7 @@ jobs:
       - run: ./scripts/azure/provision-runner.sh
     outputs:
       runner-name: ${{ steps.provision.outputs.runner-name }}
-  
+
   test-all-versions:
     needs: provision-vm
     runs-on: [self-hosted, azure-spot, ${{ needs.provision-vm.outputs.runner-name }}]
