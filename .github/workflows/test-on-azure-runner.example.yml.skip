@@ -1,0 +1,208 @@
+name: Test on Azure Self-Hosted Runner (Example)
+
+# This is an EXAMPLE workflow demonstrating Azure Spot VM runner integration
+# Once tested locally, you can replace test-on-pr-label.yml with this approach
+
+on:
+  repository_dispatch:
+    types:
+      - test-integration-lokole-azure
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to test'
+        required: true
+      pr_ref:
+        description: 'PR branch ref'
+        required: true
+      ubuntu_version:
+        description: 'Ubuntu version (22.04, 24.04, or 26.04)'
+        required: true
+        default: '24.04'
+
+jobs:
+  # Job 1: Provision Azure VM on GitHub-hosted runner
+  provision-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      vm-name: ${{ steps.provision.outputs.vm-name }}
+      runner-labels: ${{ steps.provision.outputs.runner-labels }}
+    
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+      
+      - name: Provision Azure Spot VM
+        id: provision
+        env:
+          GITHUB_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
+        run: |
+          # Determine Ubuntu version from dispatch or input
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            PR_NUMBER="${{ github.event.client_payload.pr_number }}"
+            UBUNTU_VERSION="24.04"  # Default for dispatch events
+          else
+            PR_NUMBER="${{ inputs.pr_number }}"
+            UBUNTU_VERSION="${{ inputs.ubuntu_version }}"
+          fi
+          
+          # Map Ubuntu version to LTS format
+          case "$UBUNTU_VERSION" in
+            22.04) UBUNTU_LTS="22.04-LTS" ;;
+            24.04) UBUNTU_LTS="24.04-LTS" ;;
+            26.04) UBUNTU_LTS="22.04-LTS" ;;  # Fallback to 22.04 until 26.04 available
+            *) UBUNTU_LTS="22.04-LTS" ;;
+          esac
+          
+          ./scripts/azure/provision-runner.sh \
+            --ubuntu-version "$UBUNTU_LTS" \
+            --pr-number "$PR_NUMBER" \
+            --no-cleanup \
+            | tee provision-log.txt
+          
+          # Extract VM name from logs (last line contains VM name)
+          VM_NAME=$(grep "Runner details:" provision-log.txt -A 1 | tail -1 | awk '{print $2}')
+          echo "vm-name=$VM_NAME" >> $GITHUB_OUTPUT
+          echo "runner-labels=azure-spot,self-hosted,ubuntu-${UBUNTU_VERSION}" >> $GITHUB_OUTPUT
+      
+      - name: Wait for runner registration
+        run: |
+          echo "Waiting 60s for runner to fully register..."
+          sleep 60
+
+  # Job 2: Run tests on Azure Spot VM
+  test-on-azure-runner:
+    needs: provision-runner
+    runs-on: [self-hosted, azure-spot]
+    timeout-minutes: 90  # Allow time for spot eviction retries
+    
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+      
+      - name: Extract PR details
+        id: pr_details
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "pr_number=${{ github.event.client_payload.pr_number }}" >> $GITHUB_OUTPUT
+            echo "pr_ref=${{ github.event.client_payload.ref }}" >> $GITHUB_OUTPUT
+            echo "pr_sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
+            echo "pr_repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+            echo "pr_ref=${{ inputs.pr_ref }}" >> $GITHUB_OUTPUT
+            echo "pr_repo=ascoderu/lokole" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/scenarios/*.sh
+          chmod +x scripts/vm/multipass/*.sh
+          chmod +x scripts/verify/*.sh
+      
+      - name: Run integration test
+        id: test
+        run: |
+          UBUNTU_VERSION="${{ inputs.ubuntu_version || '24.04' }}"
+          
+          ./scripts/scenarios/test-pr-branch.sh \
+            --pr-repo "${{ steps.pr_details.outputs.pr_repo }}" \
+            --pr-ref "${{ steps.pr_details.outputs.pr_ref }}" \
+            --pr-sha "${{ steps.pr_details.outputs.pr_sha }}" \
+            --pr-number "${{ steps.pr_details.outputs.pr_number }}" \
+            --ubuntu-version "$UBUNTU_VERSION"
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ steps.pr_details.outputs.pr_number }}-ubuntu-${{ inputs.ubuntu_version || '24.04' }}-azure-results
+          path: |
+            *.txt
+            *.json
+            *.md
+            *.log
+      
+      - name: Post results as PR comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
+          script: |
+            const fs = require('fs');
+            const payload = context.payload.client_payload || {};
+            const [owner, repo] = (payload.repo || 'ascoderu/lokole').split('/');
+            const prNumber = payload.pr_number || '${{ inputs.pr_number }}';
+            
+            // Read markdown comment
+            const mdFiles = fs.readdirSync('.').filter(f => f.includes('pr-comment') && f.endsWith('.md'));
+            let reportContent = '';
+            
+            if (mdFiles.length > 0) {
+              reportContent = fs.readFileSync(mdFiles[0], 'utf8');
+              reportContent = `## 🚀 Azure Self-Hosted Runner Results\n**Ubuntu ${{ inputs.ubuntu_version || '24.04' }}** | Runner: \`${{ needs.provision-runner.outputs.vm-name }}\`\n\n` + reportContent;
+            } else {
+              reportContent = '## Integration Test Results (Azure Runner)\n\n';
+              reportContent += '**Ubuntu:** ${{ inputs.ubuntu_version || "24.04" }}\n';
+              reportContent += '**Runner:** ${{ needs.provision-runner.outputs.vm-name }}\n\n';
+              reportContent += '⚠️ No detailed report generated\n';
+            }
+            
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: prNumber,
+              body: reportContent
+            });
+
+  # Job 3: Cleanup Azure VM (always runs)
+  cleanup-runner:
+    needs: [provision-runner, test-on-azure-runner]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+      
+      - name: Delete VM
+        run: |
+          VM_NAME="${{ needs.provision-runner.outputs.vm-name }}"
+          
+          if [ -n "$VM_NAME" ]; then
+            az vm delete \
+              --resource-group iiab-lokole-tests-rg \
+              --name "$VM_NAME" \
+              --yes \
+              --no-wait
+            
+            echo "✓ VM cleanup initiated: $VM_NAME"
+          else
+            echo "No VM to clean up"
+          fi
+      
+      - name: Cleanup orphaned VMs (safety net)
+        run: |
+          ./scripts/azure/cleanup-orphaned-vms.sh --max-age-hours 2

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmName": {
+      "value": "gh-runner-REPLACE_ME"
+    },
+    "vmSize": {
+      "value": "Standard_B2s"
+    },
+    "useSpotInstance": {
+      "value": true
+    },
+    "ubuntuVersion": {
+      "value": "22.04-LTS"
+    },
+    "adminUsername": {
+      "value": "azureuser"
+    },
+    "sshPublicKey": {
+      "value": "ssh-rsa REPLACE_WITH_YOUR_PUBLIC_KEY"
+    },
+    "githubRepository": {
+      "value": "ascoderu/iiab-lokole-tests"
+    },
+    "githubToken": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.KeyVault/vaults/KEY_VAULT_NAME"
+        },
+        "secretName": "github-token"
+      }
+    },
+    "runnerLabels": {
+      "value": "azure-spot,self-hosted,ubuntu-22.04"
+    },
+    "prNumber": {
+      "value": ""
+    }
+  }
+}
