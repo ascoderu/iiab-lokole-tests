@@ -2,6 +2,18 @@
 *.retry
 .ansible/
 
+# Environment variables (contains secrets)
+.env
+.azure-credentials.json
+scripts/azure/set-github-secrets.sh
+
+# SSH Keys
+.ssh/
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+
 # Python
 __pycache__/
 *.py[cod]
@@ -19,6 +31,10 @@ results/*.md
 fresh-install-*.txt
 /tmp/lokole-verification-*.json
 /tmp/pr-comment-*.md
+
+# Resource Measurements
+results/resource-measurements/
+*.csv
 
 # Logs
 *.log

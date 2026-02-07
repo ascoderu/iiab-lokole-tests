@@ -61,7 +61,7 @@ else
 fi
 
 echo "📦 Creating Ubuntu ${UBUNTU_VERSION} VM with image: ${IMAGE}..."
-if multipass launch --name ${VM_NAME} --disk 15G --memory 4G --cpus 2 ${IMAGE}; then
+if multipass launch --name ${VM_NAME} --disk 15G --memory 2G --cpus 2 ${IMAGE}; then
     echo "✅ VM created successfully"
 else
     echo "❌ Failed to create VM. Available images:"

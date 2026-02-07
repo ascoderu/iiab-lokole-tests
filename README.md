@@ -31,16 +31,17 @@ cd iiab-lokole-tests
 
 This test suite supports the full range of Python versions across Ubuntu LTS releases:
 
-| Ubuntu | Python | Status | Testing Method |
-|--------|--------|--------|----------------|
-| 22.04  | 3.10   | ✅ Stable | Standard images |
-| 24.04  | 3.12   | ✅ Stable | Standard images |
-| 26.04  | 3.13   | ⚙️ Pre-release | Daily images (`--use-daily`) |
-| 26.04  | 3.14+  | 🔮 Future | Auto-supported when available |
+| Ubuntu | Python | Status         | Testing Method                |
+| ------ | ------ | -------------- | ----------------------------- |
+| 22.04  | 3.10   | ✅ Stable      | Standard images               |
+| 24.04  | 3.12   | ✅ Stable      | Standard images               |
+| 26.04  | 3.13   | ⚙️ Pre-release | Daily images (`--use-daily`)  |
+| 26.04  | 3.14+  | 🔮 Future      | Auto-supported when available |
 
 **Matrix Testing**: All PR tests run across Ubuntu 22.04, 24.04, and 26.04 (daily) to ensure comprehensive Python version compatibility. This ensures Lokole works seamlessly as Ubuntu evolves to Python 3.14 and beyond.
 
 **Testing pre-release Ubuntu:**
+
 ```bash
 ./scripts/scenarios/fresh-install.sh --ubuntu-version 26.04 --use-daily
 ```
@@ -69,19 +70,25 @@ iiab-lokole-tests/
 ## Test Scenarios
 
 ### 1. Fresh Install
+
 Tests complete IIAB installation with Lokole on clean system:
+
 ```bash
 ./scripts/scenarios/fresh-install.sh --ubuntu-version 24.04
 ```
 
 ### 2. Upgrade Path
+
 Tests Lokole upgrade on existing IIAB:
+
 ```bash
 ./scripts/scenarios/upgrade-lokole.sh --from-version 0.5.9 --to-version 0.5.10
 ```
 
 ### 3. PR Testing
+
 Tests Lokole or IIAB Pull Request:
+
 ```bash
 ./scripts/scenarios/test-pr-branch.sh \
   --pr-repo ascoderu/lokole \
@@ -90,7 +97,9 @@ Tests Lokole or IIAB Pull Request:
 ```
 
 ### 4. Release Validation
+
 Validates new releases work with IIAB:
+
 ```bash
 ./scripts/scenarios/validate-release.sh --lokole-version 0.5.10
 ```
@@ -98,7 +107,9 @@ Validates new releases work with IIAB:
 ## Automated Testing (GitHub Actions)
 
 ### PR-Triggered Tests
+
 Label PRs with `test-iiab-integration` to trigger integration tests:
+
 1. Go to Lokole or IIAB PR
 2. Add label: `test-iiab-integration`
 3. GitHub Actions automatically runs tests across **Ubuntu 22.04, 24.04, and 26.04**
@@ -113,11 +124,13 @@ Label PRs with `test-iiab-integration` to trigger integration tests:
 **📖 See [docs/SETUP.md](docs/SETUP.md) for complete setup instructions.**
 
 ### Scheduled Tests
+
 - **Ubuntu Daily**: Weekly check for new Multipass images
 - **Release Validation**: Automatic on Lokole/IIAB releases
 - **Post-Merge**: After every merge to master
 
 ### Manual Triggers
+
 ```bash
 # Trigger workflow via GitHub CLI
 gh workflow run test-ubuntu-lts.yml -f ubuntu_version=26.04 -f use_daily=true
@@ -135,6 +148,7 @@ gh workflow run test-ubuntu-lts.yml -f ubuntu_version=26.04 -f use_daily=true
 ## Test Results & Reports
 
 Test results are generated in multiple formats:
+
 - **JSON**: `/tmp/lokole-verification-<vm_name>.json` (structured test data)
 - **Markdown**: `/tmp/pr-comment-<vm_name>.md` (PR comments with icons and tables)
 - **Text**: `fresh-install-<version>-<timestamp>.txt` (human-readable artifacts)
@@ -142,6 +156,7 @@ Test results are generated in multiple formats:
 ### Comprehensive Verification
 
 Each test run performs comprehensive checks:
+
 - **System Info**: OS version, Python version (3.10-3.14+), kernel
 - **Services**: Individual status for lokole-gunicorn, lokole-celery-beat, lokole-celery-worker, lokole-restarter
 - **Socket**: Existence, permissions, www-data group membership
@@ -152,6 +167,7 @@ Each test run performs comprehensive checks:
 ## Requirements
 
 ### For Local Testing
+
 - **Multipass**: VM management (or Vagrant/Docker)
 - **Ansible**: >= 2.11
 - **Python**: >= 3.10 (3.12+ recommended)
@@ -159,12 +175,14 @@ Each test run performs comprehensive checks:
 - **jq**: JSON processing for reports
 
 ### For CI/CD
+
 - GitHub Actions (included)
 - Secrets: `INTEGRATION_TEST_PAT` (Personal Access Token) - see [docs/SETUP.md](docs/SETUP.md)
 
 ## Cross-Repository Integration
 
 This repository integrates with:
+
 - [`ascoderu/lokole`](https://github.com/ascoderu/lokole) - Lokole email software
 - [`ascoderu/ansible-role-lokole`](https://github.com/ascoderu/ansible-role-lokole) - Canonical Ansible role
 - [`iiab/iiab`](https://github.com/iiab/iiab) - Internet-in-a-Box platform
