@@ -75,12 +75,8 @@ packages:
   - libssl-dev
   - libffi-dev
   - python3-dev
-  - snapd
 
 runcmd:
-  # Install Multipass for nested VM support
-  - snap install multipass
-
   # Create runner user
   - useradd -m -s /bin/bash runner
   - usermod -aG sudo runner
@@ -91,51 +87,18 @@ runcmd:
   - cd /home/runner/actions-runner
   - curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/v2.313.0/actions-runner-linux-x64-2.313.0.tar.gz
   - tar xzf ./actions-runner-linux-x64.tar.gz
+  - rm actions-runner-linux-x64.tar.gz
   - chown -R runner:runner /home/runner/actions-runner
 
-  # Register runner (done via startup script that has secrets)
-  - echo "Runner setup complete, ready for registration"
+  # Install runner dependencies
+  - cd /home/runner/actions-runner
+  - ./bin/installdependencies.sh
 
-write_files:
-  - path: /home/runner/register-runner.sh
-    permissions: '0755'
-    content: |
-      #!/bin/bash
-      set -euo pipefail
-      
-      GITHUB_TOKEN="${GITHUB_TOKEN}"
-      GITHUB_REPO="${GITHUB_REPO}"
-      RUNNER_LABELS="${RUNNER_LABELS}"
-      
-      cd /home/runner/actions-runner
-      
-      # Get registration token
-      REGISTRATION_TOKEN=$(curl -s -X POST \
-        -H "Authorization: token ${GITHUB_TOKEN}" \
-        -H "Accept: application/vnd.github.v3+json" \
-        "https://api.github.com/repos/${GITHUB_REPO}/actions/runners/registration-token" \
-        | jq -r .token)
-      
-      if [ -z "$REGISTRATION_TOKEN" ] || [ "$REGISTRATION_TOKEN" = "null" ]; then
-        echo "Failed to get registration token"
-        exit 1
-      fi
-      
-      # Configure runner as ephemeral (self-destructs after one job)
-      sudo -u runner ./config.sh \
-        --url "https://github.com/${GITHUB_REPO}" \
-        --token "${REGISTRATION_TOKEN}" \
-        --name "$(hostname)" \
-        --labels "${RUNNER_LABELS}" \
-        --work _work \
-        --ephemeral \
-        --unattended
-      
-      # Install and start runner service
-      sudo ./svc.sh install runner
-      sudo ./svc.sh start
-      
-      echo "Runner registered and started successfully"
+  # Create registration script placeholder (will be populated by Custom Script Extension)
+  - mkdir -p /home/runner/scripts
+  - chown runner:runner /home/runner/scripts
+
+  - echo "Runner VM setup complete, awaiting registration"
 
 final_message: "GitHub Actions runner VM provisioned at $TIMESTAMP"
 ''')
@@ -340,7 +303,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     project: 'iiab-lokole-tests'
     prNumber: prNumber
     runId: runId
-    createdAt: utcNow()
+    createdAtRunId: runId  // Unique identifier for creation time tracking
     ephemeral: 'true'
   }
 }
@@ -355,38 +318,83 @@ resource vmExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' =
     type: 'CustomScript'
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
-    settings: {}
     protectedSettings: {
-      script: base64('''#!/bin/bash
-export GITHUB_TOKEN="${GITHUB_TOKEN}"
-export GITHUB_REPO="${GITHUB_REPO}"
-export RUNNER_LABELS="${RUNNER_LABELS}"
+      script: base64(format('''#!/bin/bash
+set -euxo pipefail
+
+echo "Starting GitHub Actions runner registration..."
 
 # Wait for cloud-init to complete
+echo "Waiting for cloud-init..."
 cloud-init status --wait
 
-# Run registration script
-sudo -u runner /home/runner/register-runner.sh
+# Export secrets
+export GITHUB_TOKEN="{0}"
+export GITHUB_REPO="{1}"
+export RUNNER_LABELS="{2}"
 
-# Setup auto-shutdown after runner job completes
-cat > /home/runner/auto-shutdown.sh << 'EOF'
+# Get registration token
+echo "Getting runner registration token..."
+REGISTRATION_TOKEN=$(curl -s -X POST \
+  -H "Authorization: token ${{GITHUB_TOKEN}}" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/${{GITHUB_REPO}}/actions/runners/registration-token" \
+  | jq -r .token)
+
+if [ -z "$REGISTRATION_TOKEN" ] || [ "$REGISTRATION_TOKEN" = "null" ]; then
+  echo "ERROR: Failed to get registration token"
+  echo "Response: $REGISTRATION_TOKEN"
+  exit 1
+fi
+
+echo "Registration token obtained successfully"
+
+# Configure runner
+cd /home/runner/actions-runner
+
+echo "Configuring runner..."
+sudo -u runner ./config.sh \
+  --url "https://github.com/${{GITHUB_REPO}}" \
+  --token "$REGISTRATION_TOKEN" \
+  --name "$(hostname)" \
+  --labels "${{RUNNER_LABELS}}" \
+  --work _work \
+  --ephemeral \
+  --unattended
+
+# Install and start runner service
+echo "Installing runner service..."
+./svc.sh install runner
+
+echo "Starting runner service..."
+./svc.sh start
+
+echo "✓ GitHub Actions runner registered and started successfully"
+echo "  Repository: ${{GITHUB_REPO}}"
+echo "  Labels: ${{RUNNER_LABELS}}"
+echo "  Hostname: $(hostname)"
+
+# Setup auto-shutdown monitoring (optional, cleanup job handles this)
+cat > /home/runner/monitor-runner.sh << 'EOFSCRIPT'
 #!/bin/bash
-# Monitor runner and shutdown VM after job completes
+# Monitor runner process for debugging
 while true; do
-  if ! pgrep -f "Runner.Listener" > /dev/null; then
-    echo "Runner process not found, initiating shutdown..."
-    sudo shutdown -h now
-    exit 0
+  if pgrep -f "Runner.Listener" > /dev/null; then
+    echo "$(date): Runner is active"
+  else
+    echo "$(date): Runner process not found"
   fi
   sleep 60
 done
-EOF
+EOFSCRIPT
 
-chmod +x /home/runner/auto-shutdown.sh
-nohup /home/runner/auto-shutdown.sh > /var/log/auto-shutdown.log 2>&1 &
-''')
-      fileUris: []
-      commandToExecute: 'bash -c "$(echo ${base64(format('export GITHUB_TOKEN="{0}"; export GITHUB_REPO="{1}"; export RUNNER_LABELS="{2}"', githubToken, githubRepository, runnerLabels))} | base64 -d)"'
+chmod +x /home/runner/monitor-runner.sh
+nohup /home/runner/monitor-runner.sh > /var/log/runner-monitor.log 2>&1 &
+
+echo "Registration complete. Logs:"
+echo "  Runner: sudo journalctl -u actions.runner.*"
+echo "  Monitor: tail -f /var/log/runner-monitor.log"
+''', githubToken, githubRepository, runnerLabels))
     }
   }
 }
