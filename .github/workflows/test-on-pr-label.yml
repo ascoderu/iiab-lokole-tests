@@ -24,10 +24,6 @@ jobs:
             ubuntu_lts: '22.04-LTS'  # Fallback until 26.04 available
             python_expected: '3.13'
             use_daily: true
-    outputs:
-      vm-name-2204: ${{ steps.output-2204.outputs.vm-name }}
-      vm-name-2404: ${{ steps.output-2404.outputs.vm-name }}
-      vm-name-2604: ${{ steps.output-2604.outputs.vm-name }}
     
     steps:
       - name: Checkout test repository
@@ -59,27 +55,9 @@ jobs:
             --no-cleanup \
             | tee provision-log-${{ matrix.ubuntu_version }}.txt
           
-          # Extract VM name from logs
+          # Extract VM name from logs for informational notice
           VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}')
-          echo "vm-name=$VM_NAME" >> $GITHUB_OUTPUT
-          
-          # Store in job-specific output
           echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ matrix.ubuntu_version }}"
-      
-      - name: Store VM name for cleanup
-        id: output-2204
-        if: matrix.ubuntu_version == '22.04'
-        run: echo "vm-name=${{ steps.provision.outputs.vm-name }}" >> $GITHUB_OUTPUT
-      
-      - name: Store VM name for cleanup
-        id: output-2404
-        if: matrix.ubuntu_version == '24.04'
-        run: echo "vm-name=${{ steps.provision.outputs.vm-name }}" >> $GITHUB_OUTPUT
-      
-      - name: Store VM name for cleanup
-        id: output-2604
-        if: matrix.ubuntu_version == '26.04'
-        run: echo "vm-name=${{ steps.provision.outputs.vm-name }}" >> $GITHUB_OUTPUT
       
       - name: Wait for runner registration
         run: |
@@ -185,21 +163,11 @@ jobs:
               body: reportContent
             });
 
-  # Job 3: Cleanup Azure VMs (always runs, even if tests fail)
+  # Job 3: Cleanup Azure VMs (always runs, finds VMs by tags)
   cleanup-runners:
     needs: [provision-runners, test-on-azure-runners]
     if: always()
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - ubuntu_version: '22.04'
-            vm_output: 'vm-name-2204'
-          - ubuntu_version: '24.04'
-            vm_output: 'vm-name-2404'
-          - ubuntu_version: '26.04'
-            vm_output: 'vm-name-2604'
     
     steps:
       - name: Checkout test repository
@@ -216,22 +184,32 @@ jobs:
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
       
-      - name: Delete Azure VM
+      - name: Delete all runner VMs for this workflow run
         run: |
-          VM_NAME="${{ needs.provision-runners.outputs[matrix.vm_output] }}"
+          echo "Finding VMs for run ID: ${{ github.run_id }}"
           
-          if [ -n "$VM_NAME" ]; then
-            echo "Deleting VM: $VM_NAME"
-            az vm delete \
-              --resource-group iiab-lokole-tests-rg \
-              --name "$VM_NAME" \
-              --yes \
-              --no-wait || echo "VM deletion failed or VM already deleted"
+          # Find all VMs tagged with this run ID
+          VMS=$(az vm list \
+            --resource-group iiab-lokole-tests-rg \
+            --query "[?tags.purpose=='github-runner' && tags.runId=='${{ github.run_id }}'].name" \
+            -o tsv)
+          
+          if [ -z "$VMS" ]; then
+            echo "No VMs found for this run"
           else
-            echo "No VM name found in outputs, skipping deletion"
+            echo "Found VMs: $VMS"
+            echo "$VMS" | while read -r vm_name; do
+              echo "Deleting VM: $vm_name"
+              az vm delete \
+                --resource-group iiab-lokole-tests-rg \
+                --name "$vm_name" \
+                --yes \
+                --no-wait || echo "Failed to delete $vm_name (may already be deleted)"
+            done
           fi
       
-      - name: Run orphaned VM cleanup (safety net)
+      - name: Run orphan cleanup as safety net
         run: |
           chmod +x scripts/azure/cleanup-orphaned-vms.sh
-          ./scripts/azure/cleanup-orphaned-vms.sh --age-hours 2 || echo "Cleanup script failed (non-critical)"
+          # Clean up any VMs older than 1 hour (safety net for stuck VMs)
+          ./scripts/azure/cleanup-orphaned-vms.sh --max-age-hours 1 || echo "Orphan cleanup failed (non-critical)"
