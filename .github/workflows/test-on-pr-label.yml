@@ -7,8 +7,90 @@ on:
       - test-integration-iiab
 
 jobs:
-  test-pr:
+  # Job 1: Provision Azure Spot VM runners (one per Ubuntu version)
+  provision-runners:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu_version: '22.04'
+            ubuntu_lts: '22.04-LTS'
+            python_expected: '3.10'
+          - ubuntu_version: '24.04'
+            ubuntu_lts: '24.04-LTS'
+            python_expected: '3.12'
+          - ubuntu_version: '26.04'
+            ubuntu_lts: '22.04-LTS'  # Fallback until 26.04 available
+            python_expected: '3.13'
+            use_daily: true
+    outputs:
+      vm-name-2204: ${{ steps.output-2204.outputs.vm-name }}
+      vm-name-2404: ${{ steps.output-2404.outputs.vm-name }}
+      vm-name-2604: ${{ steps.output-2604.outputs.vm-name }}
+    
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+      
+      - name: Provision Azure Spot VM
+        id: provision
+        env:
+          GITHUB_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
+        run: |
+          PR_NUMBER="${{ github.event.client_payload.pr_number }}"
+          
+          chmod +x scripts/azure/provision-runner.sh
+          
+          ./scripts/azure/provision-runner.sh \
+            --ubuntu-version "${{ matrix.ubuntu_lts }}" \
+            --pr-number "$PR_NUMBER" \
+            --no-cleanup \
+            | tee provision-log-${{ matrix.ubuntu_version }}.txt
+          
+          # Extract VM name from logs
+          VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}')
+          echo "vm-name=$VM_NAME" >> $GITHUB_OUTPUT
+          
+          # Store in job-specific output
+          echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ matrix.ubuntu_version }}"
+      
+      - name: Store VM name for cleanup
+        id: output-2204
+        if: matrix.ubuntu_version == '22.04'
+        run: echo "vm-name=${{ steps.provision.outputs.vm-name }}" >> $GITHUB_OUTPUT
+      
+      - name: Store VM name for cleanup
+        id: output-2404
+        if: matrix.ubuntu_version == '24.04'
+        run: echo "vm-name=${{ steps.provision.outputs.vm-name }}" >> $GITHUB_OUTPUT
+      
+      - name: Store VM name for cleanup
+        id: output-2604
+        if: matrix.ubuntu_version == '26.04'
+        run: echo "vm-name=${{ steps.provision.outputs.vm-name }}" >> $GITHUB_OUTPUT
+      
+      - name: Wait for runner registration
+        run: |
+          echo "Waiting 90s for runner to register and become ready..."
+          sleep 90
+
+  # Job 2: Run tests on Azure Spot VMs
+  test-on-azure-runners:
+    needs: provision-runners
+    runs-on: [self-hosted, azure-spot, ubuntu-${{ matrix.ubuntu_version }}]
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -20,7 +102,7 @@ jobs:
           - ubuntu_version: '26.04'
             python_expected: '3.13'
             use_daily: true
-
+    
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
@@ -33,31 +115,21 @@ jobs:
           echo "pr_sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
           echo "pr_repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
 
-      - name: Set up Multipass
-        run: |
-          sudo snap install multipass
-          multipass version
-
       - name: Make scripts executable
         run: |
           chmod +x scripts/scenarios/*.sh
-          chmod +x scripts/vm/multipass/*.sh
+          chmod +x scripts/azure/*.sh
           chmod +x scripts/verify/*.sh
 
-      - name: Run PR test scenario
+      - name: Run direct IIAB installation
         id: test
         run: |
-          ARGS="--pr-repo ${{ steps.pr_details.outputs.pr_repo }}"
-          ARGS="$ARGS --pr-ref ${{ steps.pr_details.outputs.pr_ref }}"
-          ARGS="$ARGS --pr-sha ${{ steps.pr_details.outputs.pr_sha }}"
-          ARGS="$ARGS --pr-number ${{ steps.pr_details.outputs.pr_number }}"
-          ARGS="$ARGS --ubuntu-version ${{ matrix.ubuntu_version }}"
-
-          if [ "${{ matrix.use_daily }}" = "true" ]; then
-            ARGS="$ARGS --use-daily"
-          fi
-
-          ./scripts/scenarios/test-pr-branch.sh $ARGS
+          # Run IIAB installation directly on Azure VM (no nested VMs)
+          ./scripts/scenarios/direct-install.sh \
+            --pr-repo "${{ steps.pr_details.outputs.pr_repo }}" \
+            --pr-ref "${{ steps.pr_details.outputs.pr_ref }}" \
+            --pr-sha "${{ steps.pr_details.outputs.pr_sha }}" \
+            --pr-number "${{ steps.pr_details.outputs.pr_number }}"
 
       - name: Upload test results
         if: always()
@@ -109,3 +181,54 @@ jobs:
               issue_number: payload.pr_number,
               body: reportContent
             });
+
+  # Job 3: Cleanup Azure VMs (always runs, even if tests fail)
+  cleanup-runners:
+    needs: [provision-runners, test-on-azure-runners]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu_version: '22.04'
+            vm_output: 'vm-name-2204'
+          - ubuntu_version: '24.04'
+            vm_output: 'vm-name-2404'
+          - ubuntu_version: '26.04'
+            vm_output: 'vm-name-2604'
+    
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+      
+      - name: Delete Azure VM
+        run: |
+          VM_NAME="${{ needs.provision-runners.outputs[matrix.vm_output] }}"
+          
+          if [ -n "$VM_NAME" ]; then
+            echo "Deleting VM: $VM_NAME"
+            az vm delete \
+              --resource-group iiab-lokole-tests-rg \
+              --name "$VM_NAME" \
+              --yes \
+              --no-wait || echo "VM deletion failed or VM already deleted"
+          else
+            echo "No VM name found in outputs, skipping deletion"
+          fi
+      
+      - name: Run orphaned VM cleanup (safety net)
+        run: |
+          chmod +x scripts/azure/cleanup-orphaned-vms.sh
+          ./scripts/azure/cleanup-orphaned-vms.sh --age-hours 2 || echo "Cleanup script failed (non-critical)"
