@@ -46,6 +46,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
+          set -x  # Debug mode
+          echo "=== Debug Info ==="
+          echo "GITHUB_TOKEN set: ${GITHUB_TOKEN:+yes}"
+          echo "GITHUB_RUN_ID: ${GITHUB_RUN_ID}"
+          echo "Azure CLI: $(az --version | head -1)"
+          echo "==================="
+          
           PR_NUMBER="${{ github.event.client_payload.pr_number }}"
           
           chmod +x scripts/azure/provision-runner.sh
@@ -57,7 +64,7 @@ jobs:
             | tee provision-log-${{ matrix.ubuntu_version }}.txt
           
           # Extract VM name from logs for informational notice
-          VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}')
+          VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}' || echo "none")
           echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ matrix.ubuntu_version }}"
       
       - name: Wait for runner registration
