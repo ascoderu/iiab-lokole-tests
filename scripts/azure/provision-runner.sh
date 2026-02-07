@@ -182,7 +182,11 @@ generate_ssh_key() {
 deploy_vm() {
     echo -e "${BLUE}☁️  Deploying Azure VM...${NC}"
     
-    local runner_labels="azure-spot,self-hosted,ubuntu-${UBUNTU_VERSION//.-LTS/}"
+    # Strip -LTS suffix from Ubuntu version for runner labels (22.04-LTS -> 22.04)
+    local ubuntu_label="${UBUNTU_VERSION//-LTS/}"
+    local runner_labels="self-hosted,azure-spot,ubuntu-${ubuntu_label}"
+    
+    echo "Runner labels: ${runner_labels}"
     
     local deployment_output
     deployment_output=$(az deployment group create \
