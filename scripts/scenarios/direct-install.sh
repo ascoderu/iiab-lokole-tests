@@ -256,8 +256,16 @@ if [ -f "${ROOT_DIR}/scripts/verify/comprehensive-check.sh" ]; then
     # - Socket permissions and nginx configuration
     ${ROOT_DIR}/scripts/verify/comprehensive-check.sh "${VM_NAME}" || {
         echo "❌ Comprehensive verification failed"
+        # Copy JSON results even if verification failed (for debugging)
+        cp /tmp/lokole-verification.json "${ROOT_DIR}/lokole-verification.json" 2>/dev/null || true
         exit 1
     }
+    
+    # Copy JSON results to upload as artifact
+    cp /tmp/lokole-verification.json "${ROOT_DIR}/lokole-verification.json" 2>/dev/null || {
+        echo "⚠️  Warning: Could not copy verification JSON"
+    }
+    
     echo ""
     echo "✅ All verification checks passed"
 else
