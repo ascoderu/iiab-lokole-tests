@@ -13,22 +13,18 @@ jobs:
     continue-on-error: ${{ matrix.continue_on_error || false }}
     strategy:
       fail-fast: false
-      max-parallel: 1  # Sequential provisioning due to Azure spot VM quota (3 cores)
+      max-parallel: 1 # Sequential provisioning due to Azure spot VM quota (3 cores)
       matrix:
         include:
-          # Note: Ubuntu 22.04 removed - not supported by IIAB master (only 24.04+)
+          # Note: Only testing Ubuntu 24.04 (IIAB master requirement)
+          # Ubuntu 22.04: Not supported by IIAB master
+          # Ubuntu 26.04: Image not yet available in Azure
           - ubuntu_version: '24.04'
             ubuntu_lts: '24.04-LTS'
             image_offer: 'ubuntu-24_04-lts'
             image_sku: 'server'
             python_expected: '3.12'
             continue_on_error: false
-          - ubuntu_version: '26.04'
-            ubuntu_lts: '26.04-LTS'
-            image_offer: 'ubuntu-26_04-lts'
-            image_sku: 'server'
-            python_expected: '3.13'
-            continue_on_error: true
 
     steps:
       - name: Checkout test repository
@@ -104,10 +100,6 @@ jobs:
           - ubuntu_version: '24.04'
             python_expected: '3.12'
             continue_on_error: false
-          - ubuntu_version: '26.04'
-            python_expected: '3.13'
-            continue_on_error: true
-            use_daily: true
 
     steps:
       - name: Checkout test repository

@@ -124,16 +124,20 @@ sudo bash -c "cat > /etc/iiab/local_vars.yml" << EOF
 iiab_admin_user: iiab-admin
 iiab_admin_published_pwd: admin
 
-# Enable all installation stages
+# MINIMAL MODE: Only enable essential stages for Lokole
+# Stage 1: System initialization
+# Stage 2: Common dependencies
+# Stage 3: Base server (Apache, Nginx, etc.)
+# Stages 4-9: Optional apps (disabled for speed)
 stage1: True
 stage2: True
 stage3: True
-stage4: True
-stage5: True
-stage6: True
-stage7: True
-stage8: True
-stage9: True
+stage4: False
+stage5: False
+stage6: False
+stage7: False
+stage8: False
+stage9: False
 
 # Lokole-specific configuration
 lokole_install: True
