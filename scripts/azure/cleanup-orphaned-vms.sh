@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Cleanup Orphaned Azure Runner VMs
-# Deletes VMs tagged as ephemeral runners that are older than specified age
+# Cleanup Orphaned Azure Runner Resources
+# Deletes all resources (VMs, NSGs, NICs, PIPs, disks, etc.) tagged with runId
+# that are older than the specified age
 
 RESOURCE_GROUP="iiab-lokole-tests-rg"
 MAX_AGE_HOURS=2
@@ -51,21 +52,23 @@ CUTOFF_TIMESTAMP=$(date -u -d "${MAX_AGE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)
 echo "Cutoff time: ${CUTOFF_TIMESTAMP}"
 echo ""
 
-# Find orphaned resources (VMs tagged as ephemeral and old)
-ORPHANED_VMS=$(az vm list \
+# Find all resources with runId tags (grouped by runId)
+ALL_RUN_IDS=$(az resource list \
     --resource-group "$RESOURCE_GROUP" \
-    --query "[?tags.ephemeral=='true' && tags.createdAt<'${CUTOFF_TIMESTAMP}'].{name:name, created:tags.createdAt, pr:tags.prNumber, runId:tags.runId}" \
-    -o json)
+    --query "[?tags.runId!=null].{runId:tags.runId, created:tags.createdAt}" \
+    -o json | jq -r 'group_by(.runId) | .[] | {runId: .[0].runId, created: .[0].created, count: length}')
 
-VM_COUNT=$(echo "$ORPHANED_VMS" | jq 'length')
+# Filter to only orphaned runs (old enough)
+ORPHANED_RUNS=$(echo "$ALL_RUN_IDS" | jq -c "select(.created < \"${CUTOFF_TIMESTAMP}\")")
 
-if [ "$VM_COUNT" -eq 0 ]; then
-    echo -e "${GREEN}✓${NC} No orphaned VMs found"
+if [ -z "$ORPHANED_RUNS" ]; then
+    echo -e "${GREEN}✓${NC} No orphaned resources found"
     exit 0
 fi
 
-echo -e "${YELLOW}Found ${VM_COUNT} orphaned VM(s):${NC}"
-echo "$ORPHANED_VMS" | jq -r '.[] | "  • \(.name) (PR #\(.pr // "N/A"), runId: \(.runId // "N/A"), created: \(.created))"'
+RUN_COUNT=$(echo "$ORPHANED_RUNS" | wc -l)
+echo -e "${YELLOW}Found ${RUN_COUNT} orphaned run(s):${NC}"
+echo "$ORPHANED_RUNS" | jq -r '"  • runId: \(.runId) (\(.count) resource(s), created: \(.created))"'
 echo ""
 
 if [ "$DRY_RUN" = true ]; then
@@ -73,42 +76,41 @@ if [ "$DRY_RUN" = true ]; then
     exit 0
 fi
 
-# Delete all resources for each orphaned VM's runId
-echo -e "${BLUE}Deleting resources for orphaned VMs...${NC}"
-echo "$ORPHANED_VMS" | jq -r '.[] | "\(.runId)|\(.name)"' | while IFS='|' read -r run_id vm_name; do
+# Delete all resources for each orphaned runId
+echo -e "${BLUE}Deleting resources for orphaned runs...${NC}"
+DELETED_COUNT=0
+
+echo "$ORPHANED_RUNS" | jq -r '.runId' | while read -r run_id; do
     echo ""
-    echo "Processing VM: ${vm_name} (runId: ${run_id})"
+    echo "Processing runId: ${run_id}"
     
-    if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-        echo -e "${YELLOW}  ⚠️  No runId tag, deleting VM only${NC}"
-        az vm delete \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$vm_name" \
-            --yes \
-            --no-wait \
-            --force-deletion \
-            > /dev/null 2>&1 || echo -e "${RED}  ❌ Failed to delete VM${NC}"
-    else
-        # Get all resources with this runId using query filter
-        RESOURCE_IDS=$(az resource list \
-            --resource-group "$RESOURCE_GROUP" \
-            --query "[?tags.runId=='$run_id'].id" \
-            -o tsv)
-        
-        RESOURCE_COUNT=$(echo "$RESOURCE_IDS" | grep -c . || echo 0)
-        echo "  Found ${RESOURCE_COUNT} resource(s) to delete"
-        
-        # Delete all resources
-        if [ -n "$RESOURCE_IDS" ]; then
-            echo "$RESOURCE_IDS" | while read -r resource_id; do
-                RESOURCE_NAME=$(basename "$resource_id")
-                echo "    Deleting: ${RESOURCE_NAME}"
-                az resource delete --ids "$resource_id" --no-wait > /dev/null 2>&1 || echo -e "${RED}      Failed${NC}"
-            done
-        fi
+    # Get all resources with this runId using query filter
+    RESOURCE_IDS=$(az resource list \
+        --resource-group "$RESOURCE_GROUP" \
+        --query "[?tags.runId=='$run_id'].id" \
+        -o tsv)
+    
+    RESOURCE_COUNT=$(echo "$RESOURCE_IDS" | grep -c . || echo 0)
+    
+    if [ "$RESOURCE_COUNT" -eq 0 ]; then
+        echo -e "${YELLOW}  ⚠️  No resources found${NC}"
+        continue
+    fi
+    
+    echo "  Found ${RESOURCE_COUNT} resource(s) to delete"
+    
+    # Delete all resources
+    if [ -n "$RESOURCE_IDS" ]; then
+        echo "$RESOURCE_IDS" | while read -r resource_id; do
+            RESOURCE_NAME=$(basename "$resource_id")
+            RESOURCE_TYPE=$(echo "$resource_id" | grep -oP '/providers/[^/]+/[^/]+' | tail -1)
+            echo "    Deleting: ${RESOURCE_NAME} (${RESOURCE_TYPE})"
+            az resource delete --ids "$resource_id" --no-wait > /dev/null 2>&1 || echo -e "${RED}      Failed${NC}"
+        done
+        DELETED_COUNT=$((DELETED_COUNT + RESOURCE_COUNT))
     fi
 done
 
 echo ""
-echo -e "${GREEN}✓${NC} Cleanup initiated for ${VM_COUNT} VM(s)"
+echo -e "${GREEN}✓${NC} Cleanup initiated for ${RUN_COUNT} run(s) (${DELETED_COUNT} resource(s))"
 echo ""
