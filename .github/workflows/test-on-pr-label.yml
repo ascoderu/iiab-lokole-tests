@@ -33,11 +33,11 @@ jobs:
             image_sku: 'server'
             python_expected: '3.13'
             continue_on_error: true
-    
+
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
-      
+
       - name: Azure Login
         uses: azure/login@v1
         with:
@@ -48,7 +48,7 @@ jobs:
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
-      
+
       - name: Provision Azure Spot VM
         id: provision
         env:
@@ -61,11 +61,11 @@ jobs:
           echo "GITHUB_RUN_ID: ${GITHUB_RUN_ID}"
           echo "Azure CLI: $(az --version | head -1)"
           echo "==================="
-          
+
           PR_NUMBER="${{ github.event.client_payload.pr_number }}"
-          
+
           chmod +x scripts/azure/provision-runner.sh
-          
+
           # Run provision script with tee but preserve exit code
           ./scripts/azure/provision-runner.sh \
             --ubuntu-version "${{ matrix.ubuntu_lts }}" \
@@ -74,17 +74,17 @@ jobs:
             --pr-number "$PR_NUMBER" \
             --no-cleanup \
             | tee provision-log-${{ matrix.ubuntu_version }}.txt
-          
+
           # Capture exit code from provision script (PIPESTATUS[0] = first command in pipe)
           PROVISION_EXIT=${PIPESTATUS[0]}
-          
+
           # Extract VM name from logs for informational notice
           VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}' || echo "none")
           echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ matrix.ubuntu_version }}"
-          
+
           # Exit with original provision script exit code
           exit $PROVISION_EXIT
-      
+
       - name: Wait for runner registration
         run: |
           echo "Waiting 90s for runner to register and become ready..."
@@ -113,7 +113,7 @@ jobs:
             python_expected: '3.13'
             continue_on_error: true
             use_daily: true
-    
+
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
@@ -201,11 +201,11 @@ jobs:
     needs: [provision-runners, test-on-azure-runners]
     if: always()
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
-      
+
       - name: Azure Login
         uses: azure/login@v1
         with:
@@ -216,17 +216,17 @@ jobs:
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
-      
+
       - name: Delete all runner VMs for this workflow run
         run: |
           echo "Finding VMs for run ID: ${{ github.run_id }}"
-          
+
           # Find all VMs tagged with this run ID
           VMS=$(az vm list \
             --resource-group iiab-lokole-tests-rg \
             --query "[?tags.purpose=='github-runner' && tags.runId=='${{ github.run_id }}'].name" \
             -o tsv)
-          
+
           if [ -z "$VMS" ]; then
             echo "No VMs found for this run"
           else
@@ -240,7 +240,7 @@ jobs:
                 --no-wait || echo "Failed to delete $vm_name (may already be deleted)"
             done
           fi
-      
+
       - name: Run orphan cleanup as safety net
         run: |
           chmod +x scripts/azure/cleanup-orphaned-vms.sh
