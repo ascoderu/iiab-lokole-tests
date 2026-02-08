@@ -213,87 +213,43 @@ echo ""
 echo "✅ Minimal IIAB installation completed"
 
 #
-# STEP 6: Verify Installation
+# STEP 6: Run Comprehensive Verification
 #
 echo ""
-echo "✅ Step 6: Verifying installation..."
-
-# Check if IIAB completed successfully
-if [ ! -f /etc/iiab/iiab_state.yml ]; then
-    echo "❌ ERROR: IIAB state file not found - installation may have failed"
-    exit 1
-fi
-
-# Check if lokole_installed is True in iiab_state.yml
-if ! grep -q "^lokole_installed: True" /etc/iiab/iiab_state.yml; then
-    echo "❌ ERROR: lokole_installed not set to True in /etc/iiab/iiab_state.yml"
-    echo "Contents of iiab_state.yml:"
-    cat /etc/iiab/iiab_state.yml
-    exit 1
-fi
-
-echo "✅ IIAB installation completed - lokole_installed: True"
-
-# Check if Lokole virtualenv exists
-if [ ! -d /library/lokole/venv ]; then
-    echo "❌ ERROR: Lokole virtualenv not found at /library/lokole/venv"
-    ls -la /library/lokole/ 2>&1 || echo "  /library/lokole directory not found"
-    exit 1
-fi
-
-echo "✅ Lokole virtualenv exists at /library/lokole/venv"
-
-# Check if supervisor config files exist
-LOKOLE_SUPERVISOR_CONFS=(
-    "lokole_gunicorn.conf"
-    "lokole_celery_beat.conf"
-    "lokole_celery_worker.conf"
-    "lokole_restarter.conf"
-)
-
-for conf in "${LOKOLE_SUPERVISOR_CONFS[@]}"; do
-    if [ ! -f "/etc/supervisor/conf.d/${conf}" ]; then
-        echo "❌ ERROR: Supervisor config not found: /etc/supervisor/conf.d/${conf}"
-        exit 1
-    fi
-done
-
-echo "✅ All 4 Lokole supervisor configs found"
-
-# Try to import opwen_email_client from the venv
-echo ""
-echo "Checking Lokole package installation:"
-if /library/lokole/venv/bin/python -c "import opwen_email_client; print('  Version:', opwen_email_client.__version__)" 2>&1; then
-    echo "✅ Lokole package successfully imported"
-else
-    echo "❌ ERROR: Could not import opwen_email_client from virtualenv"
-    exit 1
-fi
-
-# Check supervisor service status (informational)
-echo ""
-echo "Supervisor status:"
-if systemctl is-active --quiet supervisor; then
-    echo "  ✅ Supervisor service is running"
-    
-    # Check lokole processes via supervisorctl
-    echo ""
-    echo "Lokole processes (via supervisorctl):"
-    sudo supervisorctl status | grep lokole || echo "  ⚠️  No lokole processes found (they may start on-demand)"
-else
-    echo "  ⚠️  Supervisor service not running (this might be OK for minimal installs)"
-fi
-
-#
-# STEP 7: Run Comprehensive Verification
-#
-echo ""
-echo "🔍 Step 7: Running comprehensive verification..."
+echo "🔍 Step 6: Running comprehensive verification..."
 
 if [ -f "${ROOT_DIR}/scripts/verify/comprehensive-check.sh" ]; then
-    ${ROOT_DIR}/scripts/verify/comprehensive-check.sh
+    # Run comprehensive check - it will verify:
+    # - IIAB state file and lokole_installed flag
+    # - Lokole virtualenv and package installation
+    # - Supervisor configs and services
+    # - Socket permissions and nginx configuration
+    ${ROOT_DIR}/scripts/verify/comprehensive-check.sh "direct-install" || {
+        echo "❌ Comprehensive verification failed"
+        exit 1
+    }
+    echo ""
+    echo "✅ All verification checks passed"
 else
-    echo "⚠️  Verification script not found, skipping"
+    echo "⚠️  Comprehensive verification script not found, using basic checks"
+    
+    # Fallback: Basic verification
+    if [ ! -f /etc/iiab/iiab_state.yml ]; then
+        echo "❌ ERROR: IIAB state file not found"
+        exit 1
+    fi
+    
+    if ! grep -q "^lokole_installed: True" /etc/iiab/iiab_state.yml; then
+        echo "❌ ERROR: lokole_installed not True"
+        exit 1
+    fi
+    
+    if [ ! -d /library/lokole/venv ]; then
+        echo "❌ ERROR: Lokole virtualenv not found"
+        exit 1
+    fi
+    
+    echo "✅ Basic verification passed"
 fi
 
 #

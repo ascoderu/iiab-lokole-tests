@@ -6,14 +6,9 @@
 set -euo pipefail
 
 # Configuration
-VM_NAME="${1:-}"
+VM_NAME="${1:-localhost}"
 OUTPUT_FILE="${2:-/tmp/lokole-verification.json}"
 LOKOLE_URL="http://localhost/lokole/"
-
-if [ -z "$VM_NAME" ]; then
-    echo "Usage: $0 <vm_name> [output_file]"
-    exit 1
-fi
 
 # Color codes
 RED='\033[0;31m'
