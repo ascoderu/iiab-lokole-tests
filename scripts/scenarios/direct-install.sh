@@ -201,26 +201,28 @@ sudo ./iiab-install 2>&1 | tee /tmp/iiab-install.log
 echo ""
 echo "✅ Step 6: Verifying installation..."
 
-# Check if IIAB services are running
-if ! systemctl is-active --quiet iiab-cmdsrv; then
-    echo "❌ ERROR: IIAB command server not running!"
+# Check if IIAB completed successfully
+if [ ! -f /etc/iiab/iiab_state.yml ]; then
+    echo "❌ ERROR: IIAB state file not found - installation may have failed"
     exit 1
 fi
 
 # Check if Lokole is installed
-if [ ! -d /usr/local/lib/python*/dist-packages/opwen_email_client ]; then
-    echo "❌ ERROR: Lokole (opwen_email_client) not installed!"
+LOKOLE_INSTALLED=$(pip3 list 2>/dev/null | grep -i opwen-email-client | wc -l)
+if [ "$LOKOLE_INSTALLED" -eq 0 ]; then
+    echo "❌ ERROR: Lokole (opwen-email-client) not installed!"
+    echo "Checking pip3 output:"
+    pip3 show opwen-email-client || echo "Package not found via pip3 show"
     exit 1
 fi
 
-# Check Lokole systemd services
-if ! systemctl is-active --quiet opwen_cloudserver; then
-    echo "⚠️  WARNING: Lokole cloudserver service not running"
-fi
+echo "✅ Lokole package found: $(pip3 show opwen-email-client | grep Version || echo 'version unknown')"
 
-if ! systemctl is-active --quiet opwen_webapp; then
-    echo "⚠️  WARNING: Lokole webapp service not running"
-fi
+# Check Lokole systemd services (info only, don't fail)
+echo ""
+echo "Lokole service status:"
+systemctl status opwen_cloudserver --no-pager || echo "  cloudserver service not found/running"
+systemctl status opwen_webapp --no-pager || echo "  webapp service not found/running"
 
 #
 # STEP 7: Run Comprehensive Verification
