@@ -73,6 +73,7 @@ jobs:
             --image-offer "${{ matrix.image_offer }}" \
             --image-sku "${{ matrix.image_sku }}" \
             --pr-number "$PR_NUMBER" \
+            --regular-vm \
             --no-cleanup \
             | tee provision-log-${{ matrix.ubuntu_version }}.txt
 
