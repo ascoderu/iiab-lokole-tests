@@ -325,80 +325,100 @@ resource vmExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' =
     autoUpgradeMinorVersion: true
     protectedSettings: {
       script: base64(format('''#!/bin/bash
-set -euxo pipefail
-
-echo "Starting GitHub Actions runner registration..."
+set -ux  # Remove -e and -o pipefail for better debugging
+echo "=== GitHub Actions Runner Registration Script ==="
+echo "Script started at: $(date)"
 
 # Wait for cloud-init to complete
 echo "Waiting for cloud-init..."
-cloud-init status --wait
+cloud-init status --wait || {{
+  echo "ERROR: cloud-init failed"
+  exit 1
+}}
+echo "cloud-init completed successfully"
 
-# Export secrets
-export GITHUB_TOKEN="{0}"
-export GITHUB_REPO="{1}"
-export RUNNER_LABELS="{2}"
+# Set variables (passed from Bicep)
+GITHUB_TOKEN="{0}"
+GITHUB_REPO="{1}"
+RUNNER_LABELS="{2}"
+
+echo "Configuration:"
+echo "  Repository: $GITHUB_REPO"
+echo "  Labels: $RUNNER_LABELS"
+echo "  Token length: ${{#GITHUB_TOKEN}}"
+
+# Verify jq is installed
+if ! command -v jq &> /dev/null; then
+  echo "ERROR: jq not found, installing..."
+  apt-get update && apt-get install -y jq
+fi
 
 # Get registration token
-echo "Getting runner registration token..."
-REGISTRATION_TOKEN=$(curl -s -X POST \
-  -H "Authorization: token ${{GITHUB_TOKEN}}" \
+echo "Getting runner registration token from GitHub API..."
+API_RESPONSE=$(curl -s -w "\n%{{http_code}}" -X POST \
+  -H "Authorization: token $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github.v3+json" \
-  "https://api.github.com/repos/${{GITHUB_REPO}}/actions/runners/registration-token" \
-  | jq -r .token)
+  "https://api.github.com/repos/$GITHUB_REPO/actions/runners/registration-token")
+
+HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
+
+echo "API Response code: $HTTP_CODE"
+
+if [ "$HTTP_CODE" != "201" ]; then
+  echo "ERROR: Failed to get registration token"
+  echo "HTTP Code: $HTTP_CODE"
+  echo "Response: $RESPONSE_BODY"
+  exit 1
+fi
+
+REGISTRATION_TOKEN=$(echo "$RESPONSE_BODY" | jq -r .token)
 
 if [ -z "$REGISTRATION_TOKEN" ] || [ "$REGISTRATION_TOKEN" = "null" ]; then
-  echo "ERROR: Failed to get registration token"
-  echo "Response: $REGISTRATION_TOKEN"
+  echo "ERROR: Registration token is empty or null"
+  echo "Response: $RESPONSE_BODY"
   exit 1
 fi
 
 echo "Registration token obtained successfully"
 
 # Configure runner
-cd /home/runner/actions-runner
+cd /home/runner/actions-runner || {{
+  echo "ERROR: Cannot cd to /home/runner/actions-runner"
+  exit 1
+}}
 
-echo "Configuring runner..."
+echo "Configuring runner as user 'runner'..."
 sudo -u runner ./config.sh \
-  --url "https://github.com/${{GITHUB_REPO}}" \
+  --url "https://github.com/$GITHUB_REPO" \
   --token "$REGISTRATION_TOKEN" \
   --name "$(hostname)" \
-  --labels "${{RUNNER_LABELS}}" \
+  --labels "$RUNNER_LABELS" \
   --work _work \
   --ephemeral \
-  --unattended
+  --unattended || {{
+  echo "ERROR: Runner configuration failed"
+  exit 1
+}}
 
 # Install and start runner service
 echo "Installing runner service..."
-./svc.sh install runner
+./svc.sh install runner || {{
+  echo "ERROR: Service installation failed"
+  exit 1
+}}
 
 echo "Starting runner service..."
-./svc.sh start
+./svc.sh start || {{
+  echo "ERROR: Service start failed"
+  exit 1
+}}
 
 echo "✓ GitHub Actions runner registered and started successfully"
-echo "  Repository: ${{GITHUB_REPO}}"
-echo "  Labels: ${{RUNNER_LABELS}}"
+echo "  Repository: $GITHUB_REPO"
+echo "  Labels: $RUNNER_LABELS"
 echo "  Hostname: $(hostname)"
-
-# Setup auto-shutdown monitoring (optional, cleanup job handles this)
-cat > /home/runner/monitor-runner.sh << 'EOFSCRIPT'
-#!/bin/bash
-# Monitor runner process for debugging
-while true; do
-  if pgrep -f "Runner.Listener" > /dev/null; then
-    echo "$(date): Runner is active"
-  else
-    echo "$(date): Runner process not found"
-  fi
-  sleep 60
-done
-EOFSCRIPT
-
-chmod +x /home/runner/monitor-runner.sh
-nohup /home/runner/monitor-runner.sh > /var/log/runner-monitor.log 2>&1 &
-
-echo "Registration complete. Logs:"
-echo "  Runner: sudo journalctl -u actions.runner.*"
-echo "  Monitor: tail -f /var/log/runner-monitor.log"
+echo "Script completed at: $(date)"
 ''', githubToken, githubRepository, runnerLabels))
     }
   }
