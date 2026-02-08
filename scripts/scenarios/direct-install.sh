@@ -3,6 +3,16 @@
 # Direct IIAB Installation Script for Azure CI/CD
 # Installs IIAB directly on the host system (no nested VMs)
 # Usage: ./direct-install.sh [OPTIONS]
+#
+# Options:
+#   --vm-name <name>         Name identifier for verification (default: direct-install)
+#   --pr-repo <repo>         PR repository (e.g., iiab/iiab)
+#   --pr-ref <ref>           PR branch/ref
+#   --pr-number <number>     PR number
+#   --iiab-pr <number>       IIAB PR number to test
+#   --lokole-commit <sha>    Lokole git commit to install
+#   --lokole-repo <repo>     Lokole git repository (default: ascoderu/lokole)
+#   --lokole-version <ver>   Lokole PyPI version to install
 
 set -e
 
@@ -10,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Defaults
+VM_NAME="direct-install"
 IIAB_PR=""
 LOKOLE_COMMIT=""
 LOKOLE_VERSION=""
@@ -54,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             LOKOLE_REPO="$2"
             shift 2
             ;;
+        --vm-name)
+            VM_NAME="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -63,6 +78,7 @@ done
 
 echo "🚀 Direct IIAB Installation (Azure CI/CD)"
 echo "==============================================================================="
+echo "VM Name: ${VM_NAME}"
 echo "System: $(uname -a)"
 echo "PR Repo: ${PR_REPO}"
 echo "PR Ref: ${PR_REF}"
@@ -224,7 +240,7 @@ if [ -f "${ROOT_DIR}/scripts/verify/comprehensive-check.sh" ]; then
     # - Lokole virtualenv and package installation
     # - Supervisor configs and services
     # - Socket permissions and nginx configuration
-    ${ROOT_DIR}/scripts/verify/comprehensive-check.sh "direct-install" || {
+    ${ROOT_DIR}/scripts/verify/comprehensive-check.sh "${VM_NAME}" || {
         echo "❌ Comprehensive verification failed"
         exit 1
     }
