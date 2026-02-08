@@ -259,11 +259,13 @@ wait_for_runner() {
 
 # Cleanup VM on exit
 cleanup_vm() {
+    local exit_code=$?  # Capture original exit code before any commands
+    
     if [ "$CLEANUP_ON_EXIT" = false ]; then
         echo -e "${YELLOW}⚠️  Skipping cleanup (--no-cleanup specified)${NC}"
         echo "  VM: ${VM_NAME}"
         echo "  Manual cleanup: az vm delete --resource-group ${RESOURCE_GROUP} --name ${VM_NAME} --yes"
-        return
+        return $exit_code
     fi
     
     echo ""
@@ -271,7 +273,7 @@ cleanup_vm() {
     
     if [ -z "$VM_NAME" ]; then
         echo "No VM to clean up"
-        return
+        return $exit_code
     fi
     
     # Delete VM (all associated resources have deleteOption: Delete)
@@ -285,6 +287,7 @@ cleanup_vm() {
     }
     
     echo -e "${GREEN}✓${NC} Cleanup initiated for VM: ${VM_NAME}"
+    return $exit_code  # Preserve original exit code
 }
 
 # Trap to ensure cleanup on exit
