@@ -20,15 +20,15 @@ jobs:
             image_sku: '22_04-lts-gen2'
             python_expected: '3.10'
           - ubuntu_version: '24.04'
-            ubuntu_lts: '24.04-LTS'
-            image_offer: 'ubuntu-24_04-lts'
-            image_sku: 'server-gen2'
-            python_expected: '3.12'
-          - ubuntu_version: '26.04'
-            ubuntu_lts: '22.04-LTS'
-            image_offer: '0001-com-ubuntu-server-jammy'  # Fallback to 22.04
+            ubuntu_lts: '22.04-LTS'  # Use 22.04 image temporarily
+            image_offer: '0001-com-ubuntu-server-jammy'
             image_sku: '22_04-lts-gen2'
-            python_expected: '3.13'
+            python_expected: '3.11'  # 22.04 has 3.10, but can install 3.11+
+          - ubuntu_version: '26.04'
+            ubuntu_lts: '22.04-LTS'  # Use 22.04 image temporarily
+            image_offer: '0001-com-ubuntu-server-jammy'
+            image_sku: '22_04-lts-gen2'
+            python_expected: '3.13'  # Will install from deadsnakes PPA
             use_daily: true
     
     steps:
