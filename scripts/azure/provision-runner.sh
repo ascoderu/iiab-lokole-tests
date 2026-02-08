@@ -107,7 +107,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Generate unique VM name (include Ubuntu version for matrix job uniqueness)
-VM_NAME="gh-runner-${RUN_ID}-ubuntu-${UBUNTU_VERSION}"
+# Sanitize version for Azure DNS: lowercase, no periods, only letters/numbers/hyphens
+UBUNTU_VERSION_SANITIZED=$(echo "${UBUNTU_VERSION}" | tr '[:upper:]' '[:lower:]' | tr -d '.' | tr -s '-')
+VM_NAME="gh-runner-${RUN_ID}-ubuntu-${UBUNTU_VERSION_SANITIZED}"
 
 echo -e "${BLUE}🚀 Azure Runner Provisioning${NC}"
 echo "========================================================"
