@@ -7,8 +7,52 @@ on:
       - iiab-merged
 
 jobs:
-  test-merged-version:
+  # Job 1: Provision Azure VM runner
+  provision-runner:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - ubuntu_version: '24.04'
+            ubuntu_lts: '24.04-LTS'
+            image_offer: 'ubuntu-24_04-lts'
+            image_sku: 'server'
+            python_expected: '3.12'
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Provision Azure Spot VM
+        uses: ./.github/actions/provision-azure-runner
+        with:
+          azure-credentials: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+          github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
+          ubuntu-version: ${{ matrix.ubuntu_version }}
+          ubuntu-lts: ${{ matrix.ubuntu_lts }}
+          image-offer: ${{ matrix.image_offer }}
+          image-sku: ${{ matrix.image_sku }}
+          use-regular-vm: 'true'
+
+  # Job 2: Run tests on Azure VM
+  test-merged-version:
+    needs: provision-runner
+    runs-on:
+      - self-hosted
+      - azure-spot
+      - ubuntu-${{ matrix.ubuntu_version }}
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        include:
+          - ubuntu_version: '24.04'
+            python_expected: '3.12'
 
     steps:
       - name: Checkout test repository
@@ -21,39 +65,36 @@ jobs:
           echo "sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
           echo "repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
 
-      - name: Set up Multipass
-        run: |
-          sudo snap install multipass
-          multipass version
-
       - name: Make scripts executable
         run: |
           chmod +x scripts/scenarios/*.sh
-          chmod +x scripts/vm/multipass/*.sh
+          chmod +x scripts/azure/*.sh
           chmod +x scripts/verify/*.sh
 
-      - name: Run fresh install with merged version
+      - name: Run direct IIAB installation with merged version
         id: test
         run: |
           REPO="${{ steps.merge_details.outputs.repo }}"
 
           if [[ "$REPO" == *"lokole"* ]]; then
-            # Test merged Lokole commit on Ubuntu 24.04 (Python 3.12)
-            ./scripts/scenarios/fresh-install.sh \
-              --ubuntu-version 24.04 \
-              --lokole-commit ${{ steps.merge_details.outputs.sha }}
+            # Test merged Lokole commit on Azure VM (direct installation, no nested VMs)
+            ./scripts/scenarios/direct-install.sh \
+              --pr-repo "${{ steps.merge_details.outputs.repo }}" \
+              --pr-sha "${{ steps.merge_details.outputs.sha }}" \
+              --lokole-commit "${{ steps.merge_details.outputs.sha }}"
           elif [[ "$REPO" == *"iiab"* ]]; then
-            # Test merged IIAB branch on Ubuntu 24.04 (Python 3.12)
-            ./scripts/scenarios/fresh-install.sh \
-              --ubuntu-version 24.04 \
-              --iiab-branch ${{ steps.merge_details.outputs.branch }}
+            # Test merged IIAB branch on Azure VM (direct installation, no nested VMs)
+            ./scripts/scenarios/direct-install.sh \
+              --pr-repo "${{ steps.merge_details.outputs.repo }}" \
+              --pr-sha "${{ steps.merge_details.outputs.sha }}" \
+              --iiab-branch "${{ steps.merge_details.outputs.branch }}"
           fi
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: post-merge-results
+          name: post-merge-results-ubuntu-${{ matrix.ubuntu_version }}
           path: |
             *.txt
             *.json
@@ -73,6 +114,7 @@ jobs:
             body += `**Repository:** ${payload.repo}\n`;
             body += `**Branch:** ${payload.branch}\n`;
             body += `**Commit:** ${payload.sha}\n`;
+            body += `**Ubuntu:** ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})\n`;
             body += `**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n`;
 
             // Try to read JSON report
@@ -105,10 +147,26 @@ jobs:
               labels: ['bug', 'automated-test-failure', 'post-merge']
             });
 
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Post-merge test failure: ${payload.repo}@${payload.sha.slice(0, 7)}`,
-              body: body,
-              labels: ['bug', 'automated-test-failure', 'post-merge']
-            });
+  # Job 3: Cleanup Azure VM and runner (always runs)
+  cleanup-runner:
+    needs: [provision-runner, test-merged-version]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Cleanup Azure resources
+        uses: ./.github/actions/cleanup-azure-runner
+        with:
+          azure-credentials: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+          github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
+          run-id: ${{ github.run_id }}
+          max-age-hours: '1'

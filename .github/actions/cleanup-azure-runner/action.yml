@@ -1,0 +1,82 @@
+name: 'Cleanup Azure Runner'
+description: 'Removes Azure VMs and GitHub runners for a specific workflow run'
+
+inputs:
+  azure-credentials:
+    description: 'Azure service principal credentials (JSON)'
+    required: true
+  github-token:
+    description: 'GitHub token for runner deregistration'
+    required: true
+  run-id:
+    description: 'GitHub Actions run ID to clean up'
+    required: true
+  max-age-hours:
+    description: 'Maximum age in hours for orphan cleanup safety net'
+    required: false
+    default: '1'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure-credentials }}
+
+    - name: Remove runners from GitHub registry
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        echo "Finding GitHub runners for run ID: ${{ inputs.run-id }}"
+
+        # Get all runners and filter by our run ID tag in the name
+        RUNNER_IDS=$(gh api repos/${{ github.repository }}/actions/runners \
+          --jq '[.runners[] | select(.name | contains("run-${{ inputs.run-id }}")) | .id] | .[]' || echo "")
+
+        if [ -z "$RUNNER_IDS" ]; then
+          echo "No GitHub runners found for this run"
+        else
+          echo "Found runner IDs: $RUNNER_IDS"
+          echo "$RUNNER_IDS" | while read -r runner_id; do
+            echo "Removing runner ID: $runner_id"
+            gh api --method DELETE repos/${{ github.repository }}/actions/runners/$runner_id \
+              || echo "Failed to remove runner $runner_id (may already be removed)"
+          done
+          echo "✅ GitHub runners removed"
+        fi
+
+    - name: Delete all resources for this workflow run
+      shell: bash
+      run: |
+        echo "Finding all resources for run ID: ${{ inputs.run-id }}"
+
+        # Get all resource IDs with matching runId tag (query handles tag filtering)
+        RESOURCE_IDS=$(az resource list \
+          --resource-group iiab-lokole-tests-rg \
+          --query "[?tags.runId=='${{ inputs.run-id }}'].id" \
+          -o tsv)
+
+        if [ -z "$RESOURCE_IDS" ]; then
+          echo "No resources found for this run"
+        else
+          echo "Found resources to delete:"
+          echo "$RESOURCE_IDS"
+          echo ""
+          
+          # Delete all resources in parallel
+          echo "$RESOURCE_IDS" | while read -r resource_id; do
+            echo "Deleting: $resource_id"
+            az resource delete --ids "$resource_id" --no-wait || echo "Failed to delete $resource_id (may already be deleted)"
+          done
+          
+          echo "✅ Resource deletion initiated for run ${{ inputs.run-id }}"
+        fi
+
+    - name: Run orphan cleanup as safety net
+      shell: bash
+      run: |
+        chmod +x scripts/azure/cleanup-orphaned-vms.sh
+        # Clean up any VMs older than specified hours (safety net for stuck VMs)
+        ./scripts/azure/cleanup-orphaned-vms.sh --max-age-hours ${{ inputs.max-age-hours }} || echo "Orphan cleanup failed (non-critical)"

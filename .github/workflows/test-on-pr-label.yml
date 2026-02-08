@@ -30,83 +30,23 @@ jobs:
       - name: Checkout test repository
         uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Provision Azure Spot VM
+        uses: ./.github/actions/provision-azure-runner
         with:
-          creds: |
+          azure-credentials: |
             {
               "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
               "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
-
-      - name: Provision Azure Spot VM
-        id: provision
-        env:
-          GITHUB_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-        run: |
-          set -x  # Debug mode
-          echo "=== Debug Info ==="
-          echo "GITHUB_TOKEN set: ${GITHUB_TOKEN:+yes}"
-          echo "GITHUB_RUN_ID: ${GITHUB_RUN_ID}"
-          echo "Azure CLI: $(az --version | head -1)"
-          echo "==================="
-
-          PR_NUMBER="${{ github.event.client_payload.pr_number }}"
-
-          chmod +x scripts/azure/provision-runner.sh
-
-          # Run provision script with tee but preserve exit code
-          ./scripts/azure/provision-runner.sh \
-            --ubuntu-version "${{ matrix.ubuntu_lts }}" \
-            --image-offer "${{ matrix.image_offer }}" \
-            --image-sku "${{ matrix.image_sku }}" \
-            --pr-number "$PR_NUMBER" \
-            --regular-vm \
-            --no-cleanup \
-            | tee provision-log-${{ matrix.ubuntu_version }}.txt
-
-          # Capture exit code from provision script (PIPESTATUS[0] = first command in pipe)
-          PROVISION_EXIT=${PIPESTATUS[0]}
-
-          # Extract VM name from logs for informational notice
-          VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}' || echo "none")
-          echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ matrix.ubuntu_version }}"
-
-          # Exit with original provision script exit code
-          exit $PROVISION_EXIT
-
-      - name: Wait for runner registration
-        env:
-          GH_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
-        run: |
-          echo "Checking for runner with labels: self-hosted, azure-spot, ubuntu-${{ matrix.ubuntu_version }}"
-
-          MAX_WAIT=180  # Maximum 3 minutes
-          INTERVAL=10   # Check every 10 seconds
-          ELAPSED=0
-
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            # Check for online runners with matching labels
-            RUNNER_COUNT=$(gh api repos/ascoderu/iiab-lokole-tests/actions/runners \
-              --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | contains(["self-hosted", "azure-spot", "ubuntu-${{ matrix.ubuntu_version }}"])))] | length')
-            
-            if [ "$RUNNER_COUNT" -gt 0 ]; then
-              echo "✅ Runner is online and ready (found $RUNNER_COUNT matching runner(s))"
-              break
-            fi
-            
-            echo "⏳ Waiting for runner... (${ELAPSED}s/${MAX_WAIT}s)"
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
-
-          if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "❌ Timeout: Runner did not come online within ${MAX_WAIT}s"
-            exit 1
-          fi
+          github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
+          ubuntu-version: ${{ matrix.ubuntu_version }}
+          ubuntu-lts: ${{ matrix.ubuntu_lts }}
+          image-offer: ${{ matrix.image_offer }}
+          image-sku: ${{ matrix.image_sku }}
+          pr-number: ${{ github.event.client_payload.pr_number }}
+          use-regular-vm: 'true'
 
   # Job 2: Run tests on Azure Spot VMs
   test-on-azure-runners:
@@ -231,67 +171,16 @@ jobs:
       - name: Checkout test repository
         uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Cleanup Azure resources
+        uses: ./.github/actions/cleanup-azure-runner
         with:
-          creds: |
+          azure-credentials: |
             {
               "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
               "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
-
-      - name: Remove runners from GitHub registry
-        env:
-          GH_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
-        run: |
-          echo "Finding GitHub runners for run ID: ${{ github.run_id }}"
-
-          # Get all runners and filter by our run ID tag in the name
-          RUNNER_IDS=$(gh api repos/ascoderu/iiab-lokole-tests/actions/runners \
-            --jq '[.runners[] | select(.name | contains("run-${{ github.run_id }}")) | .id] | .[]' || echo "")
-
-          if [ -z "$RUNNER_IDS" ]; then
-            echo "No GitHub runners found for this run"
-          else
-            echo "Found runner IDs: $RUNNER_IDS"
-            echo "$RUNNER_IDS" | while read -r runner_id; do
-              echo "Removing runner ID: $runner_id"
-              gh api --method DELETE repos/ascoderu/iiab-lokole-tests/actions/runners/$runner_id \
-                || echo "Failed to remove runner $runner_id (may already be removed)"
-            done
-            echo "✅ GitHub runners removed"
-          fi
-
-      - name: Delete all resources for this workflow run
-        run: |
-          echo "Finding all resources for run ID: ${{ github.run_id }}"
-
-          # Get all resource IDs with matching runId tag (query handles tag filtering)
-          RESOURCE_IDS=$(az resource list \
-            --resource-group iiab-lokole-tests-rg \
-            --query "[?tags.runId=='${{ github.run_id }}'].id" \
-            -o tsv)
-
-          if [ -z "$RESOURCE_IDS" ]; then
-            echo "No resources found for this run"
-          else
-            echo "Found resources to delete:"
-            echo "$RESOURCE_IDS"
-            echo ""
-            
-            # Delete all resources in parallel
-            echo "$RESOURCE_IDS" | while read -r resource_id; do
-              echo "Deleting: $resource_id"
-              az resource delete --ids "$resource_id" --no-wait || echo "Failed to delete $resource_id (may already be deleted)"
-            done
-            
-            echo "✅ Resource deletion initiated for run ${{ github.run_id }}"
-          fi
-
-      - name: Run orphan cleanup as safety net
-        run: |
-          chmod +x scripts/azure/cleanup-orphaned-vms.sh
-          # Clean up any VMs older than 1 hour (safety net for stuck VMs)
-          ./scripts/azure/cleanup-orphaned-vms.sh --max-age-hours 1 || echo "Orphan cleanup failed (non-critical)"
+          github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
+          run-id: ${{ github.run_id }}
+          max-age-hours: '1'

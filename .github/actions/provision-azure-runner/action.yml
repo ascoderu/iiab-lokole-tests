@@ -1,0 +1,110 @@
+name: 'Provision Azure Runner'
+description: 'Provisions an Azure Spot VM as a GitHub Actions self-hosted runner'
+
+inputs:
+  azure-credentials:
+    description: 'Azure service principal credentials (JSON)'
+    required: true
+  github-token:
+    description: 'GitHub token for runner registration'
+    required: true
+  ubuntu-version:
+    description: 'Ubuntu version (e.g., 24.04)'
+    required: true
+  ubuntu-lts:
+    description: 'Ubuntu LTS version for Azure (e.g., 24.04-LTS)'
+    required: true
+  image-offer:
+    description: 'Azure image offer (e.g., ubuntu-24_04-lts)'
+    required: true
+  image-sku:
+    description: 'Azure image SKU (e.g., server)'
+    required: true
+  pr-number:
+    description: 'PR number for tagging resources'
+    required: false
+    default: ''
+  use-regular-vm:
+    description: 'Use regular VM instead of spot instance'
+    required: false
+    default: 'true'
+
+outputs:
+  vm-name:
+    description: 'Name of the provisioned VM'
+    value: ${{ steps.provision.outputs.vm_name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure-credentials }}
+
+    - name: Provision Azure VM
+      id: provision
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+      run: |
+        chmod +x scripts/azure/provision-runner.sh
+
+        ARGS="--ubuntu-version ${{ inputs.ubuntu-lts }} \
+          --image-offer ${{ inputs.image-offer }} \
+          --image-sku ${{ inputs.image-sku }} \
+          --no-cleanup"
+
+        if [ "${{ inputs.use-regular-vm }}" = "true" ]; then
+          ARGS="$ARGS --regular-vm"
+        fi
+
+        if [ -n "${{ inputs.pr-number }}" ]; then
+          ARGS="$ARGS --pr-number ${{ inputs.pr-number }}"
+        fi
+
+        # Run provision script with tee but preserve exit code
+        ./scripts/azure/provision-runner.sh $ARGS | tee provision-log-${{ inputs.ubuntu-version }}.txt
+
+        # Capture exit code from provision script (PIPESTATUS[0] = first command in pipe)
+        PROVISION_EXIT=${PIPESTATUS[0]}
+
+        # Extract VM name from logs
+        VM_NAME=$(grep "^  Name:" provision-log-${{ inputs.ubuntu-version }}.txt | awk '{print $NF}' || echo "none")
+        echo "vm_name=$VM_NAME" >> $GITHUB_OUTPUT
+        echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ inputs.ubuntu-version }}"
+
+        # Exit with original provision script exit code
+        exit $PROVISION_EXIT
+
+    - name: Wait for runner registration
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        echo "Checking for runner with labels: self-hosted, azure-spot, ubuntu-${{ inputs.ubuntu-version }}"
+
+        MAX_WAIT=180  # Maximum 3 minutes
+        INTERVAL=10   # Check every 10 seconds
+        ELAPSED=0
+
+        while [ $ELAPSED -lt $MAX_WAIT ]; do
+          # Check for online runners with matching labels
+          RUNNER_COUNT=$(gh api repos/${{ github.repository }}/actions/runners \
+            --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | contains(["self-hosted", "azure-spot", "ubuntu-${{ inputs.ubuntu-version }}"])))] | length')
+          
+          if [ "$RUNNER_COUNT" -gt 0 ]; then
+            echo "✅ Runner is online and ready (found $RUNNER_COUNT matching runner(s))"
+            break
+          fi
+          
+          echo "⏳ Waiting for runner... (${ELAPSED}s/${MAX_WAIT}s)"
+          sleep $INTERVAL
+          ELAPSED=$((ELAPSED + INTERVAL))
+        done
+
+        if [ $ELAPSED -ge $MAX_WAIT ]; then
+          echo "❌ Timeout: Runner did not come online within ${MAX_WAIT}s"
+          exit 1
+        fi
