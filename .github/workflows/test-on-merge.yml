@@ -23,7 +23,7 @@ jobs:
       - name: Checkout test repository
         uses: actions/checkout@v4
 
-      - name: Provision Azure Spot VM
+      - name: Provision Azure VM Runner
         uses: ./.github/actions/provision-azure-runner
         with:
           azure-credentials: |
@@ -45,7 +45,7 @@ jobs:
     needs: provision-runner
     runs-on:
       - self-hosted
-      - azure-spot
+      - azure
       - ubuntu-${{ matrix.ubuntu_version }}
     timeout-minutes: 90
     strategy:

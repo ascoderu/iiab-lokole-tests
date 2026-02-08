@@ -1,5 +1,5 @@
 name: 'Provision Azure Runner'
-description: 'Provisions an Azure Spot VM as a GitHub Actions self-hosted runner'
+description: 'Provisions an Azure VM as a GitHub Actions self-hosted runner'
 
 inputs:
   azure-credentials:
@@ -25,7 +25,7 @@ inputs:
     required: false
     default: ''
   use-regular-vm:
-    description: 'Use regular VM instead of spot instance'
+    description: 'Use regular VM (default: true)'
     required: false
     default: 'true'
 
@@ -83,7 +83,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
-        echo "Checking for runner with labels: self-hosted, azure-spot, ubuntu-${{ inputs.ubuntu-version }}"
+        echo "Checking for runner with labels: self-hosted, azure, ubuntu-${{ inputs.ubuntu-version }}"
 
         MAX_WAIT=180  # Maximum 3 minutes
         INTERVAL=10   # Check every 10 seconds
@@ -92,7 +92,7 @@ runs:
         while [ $ELAPSED -lt $MAX_WAIT ]; do
           # Check for online runners with matching labels
           RUNNER_COUNT=$(gh api repos/${{ github.repository }}/actions/runners \
-            --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | contains(["self-hosted", "azure-spot", "ubuntu-${{ inputs.ubuntu-version }}"])))] | length')
+            --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | contains(["self-hosted", "azure", "ubuntu-${{ inputs.ubuntu-version }}"])))] | length')
           
           if [ "$RUNNER_COUNT" -gt 0 ]; then
             echo "✅ Runner is online and ready (found $RUNNER_COUNT matching runner(s))"

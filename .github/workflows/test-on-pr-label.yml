@@ -7,13 +7,13 @@ on:
       - test-integration-iiab
 
 jobs:
-  # Job 1: Provision Azure Spot VM runners (one per Ubuntu version)
+  # Job 1: Provision Azure VM runners (one per Ubuntu version)
   provision-runners:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.continue_on_error || false }}
     strategy:
       fail-fast: false
-      max-parallel: 1 # Sequential provisioning due to Azure spot VM quota (3 cores)
+      max-parallel: 1 # Sequential provisioning due to Azure VM quota (3 cores)
       matrix:
         include:
           # Note: Only testing Ubuntu 24.04 (IIAB master requirement)
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout test repository
         uses: actions/checkout@v4
 
-      - name: Provision Azure Spot VM
+      - name: Provision Azure VM Runner
         uses: ./.github/actions/provision-azure-runner
         with:
           azure-credentials: |
@@ -53,7 +53,7 @@ jobs:
     needs: provision-runners
     runs-on:
       - self-hosted
-      - azure-spot
+      - azure
       - ubuntu-${{ matrix.ubuntu_version }}
     timeout-minutes: 90
     continue-on-error: ${{ matrix.continue_on_error || false }}
