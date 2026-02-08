@@ -199,7 +199,7 @@ deploy_vm() {
     
     # Strip -LTS suffix from Ubuntu version for runner labels (22.04-LTS -> 22.04)
     local ubuntu_label="${UBUNTU_VERSION//-LTS/}"
-    local runner_labels="self-hosted,azure-spot,ubuntu-${ubuntu_label}"
+    local runner_labels="self-hosted,azure,ubuntu-${ubuntu_label}"
     
     echo "Runner labels: ${runner_labels}"
     

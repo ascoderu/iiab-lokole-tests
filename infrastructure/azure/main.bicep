@@ -41,7 +41,7 @@ param githubRepository string = 'ascoderu/iiab-lokole-tests'
 param githubToken string
 
 @description('Runner labels (comma-separated)')
-param runnerLabels string = 'azure-spot,self-hosted'
+param runnerLabels string = 'azure,self-hosted'
 
 @description('Test PR number (for tagging/tracking)')
 param prNumber string = ''
@@ -157,13 +157,8 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {
   }
 }
 
-// Virtual Network (shared across all runners)
-resource vnet 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {
-  name: virtualNetworkName
-}
-
-// If VNet doesn't exist, create it
-resource vnetNew 'Microsoft.Network/virtualNetworks@2023-05-01' = if (false) {  // Only deploy if needed
+// Virtual Network - create if it doesn't exist (idempotent)
+resource vnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
   name: virtualNetworkName
   location: location
   properties: {
