@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false  # Test all versions even if one fails
+      max-parallel: 4  # Parallel provisioning (10 vCPU quota allows 5× Standard_B2s)
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:
