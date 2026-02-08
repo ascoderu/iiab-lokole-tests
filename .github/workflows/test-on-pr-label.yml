@@ -83,16 +83,15 @@ jobs:
           GH_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
         run: |
           echo "Checking for runner with labels: self-hosted, azure-spot, ubuntu-${{ matrix.ubuntu_version }}"
-          
+
           MAX_WAIT=180  # Maximum 3 minutes
           INTERVAL=10   # Check every 10 seconds
           ELAPSED=0
-          
+
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             # Check for online runners with matching labels
             RUNNER_COUNT=$(gh api repos/ascoderu/iiab-lokole-tests/actions/runners \
-              --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | 
-                contains(["self-hosted", "azure-spot", "ubuntu-${{ matrix.ubuntu_version }}"]))] | length')
+              --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | contains(["self-hosted", "azure-spot", "ubuntu-${{ matrix.ubuntu_version }}"])))] | length')
             
             if [ "$RUNNER_COUNT" -gt 0 ]; then
               echo "✅ Runner is online and ready (found $RUNNER_COUNT matching runner(s))"
@@ -103,7 +102,7 @@ jobs:
             sleep $INTERVAL
             ELAPSED=$((ELAPSED + INTERVAL))
           done
-          
+
           if [ $ELAPSED -ge $MAX_WAIT ]; then
             echo "❌ Timeout: Runner did not come online within ${MAX_WAIT}s"
             exit 1
@@ -242,6 +241,28 @@ jobs:
               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
             }
+
+      - name: Remove runners from GitHub registry
+        env:
+          GH_TOKEN: ${{ secrets.INTEGRATION_TEST_PAT }}
+        run: |
+          echo "Finding GitHub runners for run ID: ${{ github.run_id }}"
+          
+          # Get all runners and filter by our run ID tag in the name
+          RUNNER_IDS=$(gh api repos/ascoderu/iiab-lokole-tests/actions/runners \
+            --jq '[.runners[] | select(.name | contains("run-${{ github.run_id }}")) | .id] | .[]' || echo "")
+          
+          if [ -z "$RUNNER_IDS" ]; then
+            echo "No GitHub runners found for this run"
+          else
+            echo "Found runner IDs: $RUNNER_IDS"
+            echo "$RUNNER_IDS" | while read -r runner_id; do
+              echo "Removing runner ID: $runner_id"
+              gh api --method DELETE repos/ascoderu/iiab-lokole-tests/actions/runners/$runner_id \
+                || echo "Failed to remove runner $runner_id (may already be removed)"
+            done
+            echo "✅ GitHub runners removed"
+          fi
 
       - name: Delete all runner VMs for this workflow run
         run: |
