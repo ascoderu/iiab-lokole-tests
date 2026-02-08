@@ -162,22 +162,34 @@ echo "Configuration written to /etc/iiab/local_vars.yml"
 cat /etc/iiab/local_vars.yml
 
 #
-# STEP 4: Run IIAB Installation
+# STEP 4: Install Ansible (required by IIAB)
 #
 echo ""
-echo "🛠️  Step 4: Running IIAB installation..."
-echo "This may take 10-15 minutes..."
+echo "📦 Step 4a: Installing Ansible..."
+echo "This is required by IIAB before running iiab-install"
 
 cd /opt/iiab/iiab
+
+# Install Ansible using IIAB's script
+sudo ./scripts/ansible 2>&1 | tee /tmp/ansible-install.log
+
+echo "✅ Ansible installed successfully"
+
+#
+# STEP 5: Run IIAB Installation
+#
+echo ""
+echo "🛠️  Step 5: Running IIAB installation..."
+echo "This may take 10-15 minutes..."
 
 # Run installation with logging
 sudo ./iiab-install 2>&1 | tee /tmp/iiab-install.log
 
 #
-# STEP 5: Verify Installation
+# STEP 6: Verify Installation
 #
 echo ""
-echo "✅ Step 5: Verifying installation..."
+echo "✅ Step 6: Verifying installation..."
 
 # Check if IIAB services are running
 if ! systemctl is-active --quiet iiab-cmdsrv; then
@@ -201,10 +213,10 @@ if ! systemctl is-active --quiet opwen_webapp; then
 fi
 
 #
-# STEP 6: Run Comprehensive Verification
+# STEP 7: Run Comprehensive Verification
 #
 echo ""
-echo "🔍 Step 6: Running comprehensive verification..."
+echo "🔍 Step 7: Running comprehensive verification..."
 
 if [ -f "${ROOT_DIR}/scripts/verify/comprehensive-check.sh" ]; then
     ${ROOT_DIR}/scripts/verify/comprehensive-check.sh
