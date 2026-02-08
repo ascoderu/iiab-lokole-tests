@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 RESOURCE_GROUP="iiab-lokole-tests-rg"
-LOCATION="eastus"
+LOCATION="westus2"  # Changed from eastus due to capacity issues
 BICEP_TEMPLATE="${ROOT_DIR}/infrastructure/azure/main.bicep"
 VM_NAME=""
 VM_SIZE="Standard_B2s"
