@@ -203,6 +203,7 @@ deploy_vm() {
     
     local deployment_output
     deployment_output=$(az deployment group create \
+        --name "deploy-$VM_NAME" \
         --resource-group "$RESOURCE_GROUP" \
         --template-file "$BICEP_TEMPLATE" \
         --parameters \
