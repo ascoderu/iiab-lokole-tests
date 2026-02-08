@@ -104,16 +104,30 @@ sudo apt-get install -y git curl wget build-essential
 echo ""
 echo "  Step 2: Cloning IIAB repository..."
 
-if [ -n "$IIAB_PR" ]; then
-    echo "Using IIAB PR #${IIAB_PR}"
+# Determine if this is an IIAB PR by checking PR_REPO
+if [[ "$PR_REPO" == iiab/iiab* ]] && [ -n "$PR_NUMBER" ]; then
+    echo "Using IIAB PR #${PR_NUMBER} (from ${PR_REPO})"
     # Clone and fetch PR
+    sudo git clone https://github.com/iiab/iiab.git /opt/iiab/iiab
+    cd /opt/iiab/iiab
+    sudo git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
+    sudo git checkout pr-${PR_NUMBER}
+    echo "Checked out PR branch: $(git branch --show-current)"
+    echo "Latest commit: $(git log -1 --oneline)"
+elif [ -n "$IIAB_PR" ]; then
+    # Legacy support for --iiab-pr parameter
+    echo "Using IIAB PR #${IIAB_PR}"
     sudo git clone https://github.com/iiab/iiab.git /opt/iiab/iiab
     cd /opt/iiab/iiab
     sudo git fetch origin pull/${IIAB_PR}/head:pr-${IIAB_PR}
     sudo git checkout pr-${IIAB_PR}
+    echo "Checked out PR branch: $(git branch --show-current)"
+    echo "Latest commit: $(git log -1 --oneline)"
 else
     echo "Using IIAB master branch"
     sudo git clone --depth 1 https://github.com/iiab/iiab.git /opt/iiab/iiab
+    cd /opt/iiab/iiab
+    echo "Latest commit: $(git log -1 --oneline)"
 fi
 
 #
