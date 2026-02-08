@@ -170,12 +170,15 @@ jobs:
             if (mdFiles.length > 0) {
               reportContent = fs.readFileSync(mdFiles[0], 'utf8');
               // Add matrix info header
-              reportContent = `## Test Result for Ubuntu ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})\n\n` + reportContent;
+              const optionalBadge = ${{ matrix.continue_on_error || false }} ? ' 🟡 (Optional)' : '';
+              reportContent = `## Test Result for Ubuntu ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})${optionalBadge}\n\n` + reportContent;
             } else {
               // Fallback to basic report
-              reportContent = '## Integration Test Results\n\n';
+              const optionalBadge = ${{ matrix.continue_on_error || false }} ? ' 🟡 (Optional)' : '';
+              reportContent = `## Integration Test Results${optionalBadge}\n\n`;
               reportContent += '**Ubuntu:** ${{ matrix.ubuntu_version }}\n';
-              reportContent += '**Expected Python:** ${{ matrix.python_expected }}\n\n';
+              reportContent += '**Expected Python:** ${{ matrix.python_expected }}\n';
+              reportContent += '**Status:** ' + (${{ matrix.continue_on_error || false }} ? 'Optional (failures allowed)' : 'Required') + '\n\n';
               
               const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
               if (reportFiles.length > 0) {
