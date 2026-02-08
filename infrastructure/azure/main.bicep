@@ -20,12 +20,11 @@ param vmSize string = 'Standard_B2s'
 @description('Use Spot VM for cost savings (recommended)')
 param useSpotInstance bool = true
 
-@description('Ubuntu version for the VM')
-@allowed([
-  '22.04-LTS'
-  '24.04-LTS'
-])
-param ubuntuVersion string = '22.04-LTS'
+@description('Azure Marketplace image offer')
+param imageOffer string = '0001-com-ubuntu-server-jammy'
+
+@description('Azure Marketplace image SKU')
+param imageSku string = '22_04-lts-gen2'
 
 @description('Admin username for the VM')
 param adminUsername string = 'azureuser'
@@ -257,8 +256,8 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     storageProfile: {
       imageReference: {
         publisher: 'Canonical'
-        offer: 'ubuntu-24_04-lts'
-        sku: 'server-gen2'
+        offer: imageOffer
+        sku: imageSku
         version: 'latest'
       }
       osDisk: {

@@ -16,12 +16,18 @@ jobs:
         include:
           - ubuntu_version: '22.04'
             ubuntu_lts: '22.04-LTS'
+            image_offer: '0001-com-ubuntu-server-jammy'
+            image_sku: '22_04-lts-gen2'
             python_expected: '3.10'
           - ubuntu_version: '24.04'
             ubuntu_lts: '24.04-LTS'
+            image_offer: 'ubuntu-24_04-lts'
+            image_sku: 'server-gen2'
             python_expected: '3.12'
           - ubuntu_version: '26.04'
-            ubuntu_lts: '22.04-LTS'  # Fallback until 26.04 available
+            ubuntu_lts: '22.04-LTS'
+            image_offer: '0001-com-ubuntu-server-jammy'  # Fallback to 22.04
+            image_sku: '22_04-lts-gen2'
             python_expected: '3.13'
             use_daily: true
     
@@ -57,15 +63,24 @@ jobs:
           
           chmod +x scripts/azure/provision-runner.sh
           
+          # Run provision script with tee but preserve exit code
           ./scripts/azure/provision-runner.sh \
             --ubuntu-version "${{ matrix.ubuntu_lts }}" \
+            --image-offer "${{ matrix.image_offer }}" \
+            --image-sku "${{ matrix.image_sku }}" \
             --pr-number "$PR_NUMBER" \
             --no-cleanup \
             | tee provision-log-${{ matrix.ubuntu_version }}.txt
           
+          # Capture exit code from provision script (PIPESTATUS[0] = first command in pipe)
+          PROVISION_EXIT=${PIPESTATUS[0]}
+          
           # Extract VM name from logs for informational notice
           VM_NAME=$(grep "^  Name:" provision-log-${{ matrix.ubuntu_version }}.txt | awk '{print $NF}' || echo "none")
           echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ matrix.ubuntu_version }}"
+          
+          # Exit with original provision script exit code
+          exit $PROVISION_EXIT
       
       - name: Wait for runner registration
         run: |

@@ -21,6 +21,8 @@ BICEP_TEMPLATE="${ROOT_DIR}/infrastructure/azure/main.bicep"
 VM_NAME=""
 VM_SIZE="Standard_D2s_v3"
 UBUNTU_VERSION="22.04-LTS"
+IMAGE_OFFER="0001-com-ubuntu-server-jammy"
+IMAGE_SKU="22_04-lts-gen2"
 USE_SPOT=true
 PR_NUMBER=""
 RUN_ID="${GITHUB_RUN_ID:-$(date +%s)}"
@@ -37,6 +39,8 @@ Provision ephemeral Azure VM for GitHub Actions self-hosted runner
 OPTIONS:
     --vm-size SIZE           Azure VM size (default: Standard_B2s)
     --ubuntu-version VER     Ubuntu version: 22.04-LTS or 24.04-LTS (default: 22.04-LTS)
+    --image-offer OFFER      Azure Marketplace image offer
+    --image-sku SKU          Azure Marketplace image SKU
     --regular-vm             Use regular VM instead of Spot (higher cost, no eviction)
     --pr-number NUMBER       PR number for tagging
     --no-cleanup             Don't delete VM on script exit (for debugging)
@@ -66,6 +70,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ubuntu-version)
             UBUNTU_VERSION="$2"
+            shift 2
+            ;;
+        --image-offer)
+            IMAGE_OFFER="$2"
+            shift 2
+            ;;
+        --image-sku)
+            IMAGE_SKU="$2"
             shift 2
             ;;
         --regular-vm)
@@ -102,6 +114,7 @@ echo "========================================================"
 echo "VM Name: ${VM_NAME}"
 echo "VM Size: ${VM_SIZE}"
 echo "Ubuntu: ${UBUNTU_VERSION}"
+echo "Image: ${IMAGE_OFFER} / ${IMAGE_SKU}"
 echo "Spot VM: ${USE_SPOT}"
 echo "PR Number: ${PR_NUMBER:-N/A}"
 echo "Resource Group: ${RESOURCE_GROUP}"
@@ -196,7 +209,8 @@ deploy_vm() {
             vmName="$VM_NAME" \
             vmSize="$VM_SIZE" \
             useSpotInstance="$USE_SPOT" \
-            ubuntuVersion="$UBUNTU_VERSION" \
+            imageOffer="$IMAGE_OFFER" \
+            imageSku="$IMAGE_SKU" \
             adminUsername="azureuser" \
             sshPublicKey="$SSH_PUBLIC_KEY" \
             githubRepository="ascoderu/iiab-lokole-tests" \
