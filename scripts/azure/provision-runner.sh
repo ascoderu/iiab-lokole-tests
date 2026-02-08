@@ -202,8 +202,10 @@ deploy_vm() {
     echo "Runner labels: ${runner_labels}"
     
     local deployment_output
+    # Add timestamp to deployment name to avoid conflicts from retries
+    local deployment_timestamp=$(date +%s)
     deployment_output=$(az deployment group create \
-        --name "deploy-$VM_NAME" \
+        --name "deploy-$VM_NAME-$deployment_timestamp" \
         --resource-group "$RESOURCE_GROUP" \
         --template-file "$BICEP_TEMPLATE" \
         --parameters \
