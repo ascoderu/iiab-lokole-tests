@@ -106,8 +106,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Generate unique VM name
-VM_NAME="gh-runner-${RUN_ID}"
+# Generate unique VM name (include Ubuntu version for matrix job uniqueness)
+VM_NAME="gh-runner-${RUN_ID}-ubuntu-${UBUNTU_VERSION}"
 
 echo -e "${BLUE}🚀 Azure Runner Provisioning${NC}"
 echo "========================================================"
