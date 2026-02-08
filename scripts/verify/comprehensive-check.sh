@@ -73,9 +73,16 @@ init_json() {
 EOF
 }
 
-# Execute command in VM
+# Execute command in VM (or locally if direct mode)
 vm_exec() {
-    multipass exec "$VM_NAME" -- bash -c "$1" 2>/dev/null || echo ""
+    # Check if running in direct mode (no nested VM)
+    if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+        # Execute locally
+        bash -c "$1" 2>/dev/null || echo ""
+    else
+        # Execute via multipass
+        multipass exec "$VM_NAME" -- bash -c "$1" 2>/dev/null || echo ""
+    fi
 }
 
 # Get system information
@@ -117,7 +124,14 @@ check_ansible_status() {
 # Check individual service status
 check_service() {
     local service_name="$1"
-    local status=$(timeout 10 multipass exec "$VM_NAME" -- sudo supervisorctl status "$service_name" 2>/dev/null || echo "")
+    local status=""
+    
+    # Check if running in direct mode
+    if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+        status=$(timeout 10 sudo supervisorctl status "$service_name" 2>/dev/null || echo "")
+    else
+        status=$(timeout 10 multipass exec "$VM_NAME" -- sudo supervisorctl status "$service_name" 2>/dev/null || echo "")
+    fi
     
     local state="unknown"
     local pid=""
