@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo -e "${BLUE}🧹 Cleanup Orphaned Runner VMs${NC}"
+echo -e "${BLUE}🧹 Cleanup Orphaned Runner Resources${NC}"
 echo "========================================================"
 echo "Resource Group: ${RESOURCE_GROUP}"
 echo "Max Age: ${MAX_AGE_HOURS} hours"
@@ -51,10 +51,10 @@ CUTOFF_TIMESTAMP=$(date -u -d "${MAX_AGE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)
 echo "Cutoff time: ${CUTOFF_TIMESTAMP}"
 echo ""
 
-# Find orphaned VMs
+# Find orphaned resources (VMs tagged as ephemeral and old)
 ORPHANED_VMS=$(az vm list \
     --resource-group "$RESOURCE_GROUP" \
-    --query "[?tags.ephemeral=='true' && tags.createdAt<'${CUTOFF_TIMESTAMP}'].{name:name, created:tags.createdAt, pr:tags.prNumber}" \
+    --query "[?tags.ephemeral=='true' && tags.createdAt<'${CUTOFF_TIMESTAMP}'].{name:name, created:tags.createdAt, pr:tags.prNumber, runId:tags.runId}" \
     -o json)
 
 VM_COUNT=$(echo "$ORPHANED_VMS" | jq 'length')
@@ -65,26 +65,47 @@ if [ "$VM_COUNT" -eq 0 ]; then
 fi
 
 echo -e "${YELLOW}Found ${VM_COUNT} orphaned VM(s):${NC}"
-echo "$ORPHANED_VMS" | jq -r '.[] | "  • \(.name) (PR #\(.pr // "N/A"), created: \(.created))"'
+echo "$ORPHANED_VMS" | jq -r '.[] | "  • \(.name) (PR #\(.pr // "N/A"), runId: \(.runId // "N/A"), created: \(.created))"'
 echo ""
 
 if [ "$DRY_RUN" = true ]; then
-    echo -e "${YELLOW}Dry run - no VMs will be deleted${NC}"
+    echo -e "${YELLOW}Dry run - no resources will be deleted${NC}"
     exit 0
 fi
 
-# Delete VMs
-echo -e "${BLUE}Deleting VMs...${NC}"
-echo "$ORPHANED_VMS" | jq -r '.[].name' | while read -r vm_name; do
-    echo "  Deleting: ${vm_name}"
-    az vm delete \
-        --resource-group "$RESOURCE_GROUP" \
-        --name "$vm_name" \
-        --yes \
-        --no-wait \
-        > /dev/null 2>&1 || {
-        echo -e "${RED}  ❌ Failed to delete: ${vm_name}${NC}"
-    }
+# Delete all resources for each orphaned VM's runId
+echo -e "${BLUE}Deleting resources for orphaned VMs...${NC}"
+echo "$ORPHANED_VMS" | jq -r '.[] | "\(.runId)|\(.name)"' | while IFS='|' read -r run_id vm_name; do
+    echo ""
+    echo "Processing VM: ${vm_name} (runId: ${run_id})"
+    
+    if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+        echo -e "${YELLOW}  ⚠️  No runId tag, deleting VM only${NC}"
+        az vm delete \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$vm_name" \
+            --yes \
+            --no-wait \
+            --force-deletion \
+            > /dev/null 2>&1 || echo -e "${RED}  ❌ Failed to delete VM${NC}"
+    else
+        # Get all resources with this runId
+        RESOURCE_IDS=$(az resource list \
+            --resource-group "$RESOURCE_GROUP" \
+            --tag runId="$run_id" \
+            --query "[].id" \
+            -o tsv)
+        
+        RESOURCE_COUNT=$(echo "$RESOURCE_IDS" | wc -l)
+        echo "  Found ${RESOURCE_COUNT} resource(s) to delete"
+        
+        # Delete all resources
+        echo "$RESOURCE_IDS" | while read -r resource_id; do
+            RESOURCE_NAME=$(basename "$resource_id")
+            echo "    Deleting: ${RESOURCE_NAME}"
+            az resource delete --ids "$resource_id" --no-wait > /dev/null 2>&1 || echo -e "${RED}      Failed${NC}"
+        done
+    fi
 done
 
 echo ""

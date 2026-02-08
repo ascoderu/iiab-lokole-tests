@@ -152,6 +152,8 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {
   tags: {
     purpose: 'github-runner'
     project: 'iiab-lokole-tests'
+    prNumber: prNumber
+    runId: runId
   }
 }
 
@@ -221,6 +223,9 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-05-01' = {
           privateIPAllocationMethod: 'Dynamic'
           publicIPAddress: {
             id: publicIP.id
+            properties: {
+              deleteOption: 'Delete'  // Auto-delete public IP when NIC is deleted
+            }
           }
           subnet: {
             id: resourceId('Microsoft.Network/virtualNetworks/subnets', virtualNetworkName, subnetName)
@@ -231,6 +236,12 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-05-01' = {
     networkSecurityGroup: {
       id: nsg.id
     }
+  }
+  tags: {
+    purpose: 'github-runner'
+    project: 'iiab-lokole-tests'
+    prNumber: prNumber
+    runId: runId
   }
   dependsOn: [
     vnet
