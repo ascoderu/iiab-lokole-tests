@@ -126,14 +126,11 @@ sudo bash -c "cat > /etc/iiab/local_vars.yml" << EOF
 iiab_admin_user: iiab-admin
 iiab_admin_published_pwd: admin
 
-# MINIMAL MODE: Only enable essential stages for Lokole
-# Stage 1: System initialization
-# Stage 2: Common dependencies
-# Stage 3: Base server (Apache, Nginx, etc.)
-# Stages 4-9: Optional apps (disabled for speed)
-stage1: True
-stage2: True
-stage3: True
+# MINIMAL mode: Install ONLY what's needed for Lokole
+# Disable all stages to prevent automatic installation of unnecessary packages
+stage1: False
+stage2: False
+stage3: False
 stage4: False
 stage5: False
 stage6: False
@@ -141,7 +138,9 @@ stage7: False
 stage8: False
 stage9: False
 
-# Lokole-specific configuration
+# Explicitly install only what Lokole needs
+nginx_install: True
+nginx_enabled: True
 lokole_install: True
 lokole_enabled: True
 EOF
@@ -161,11 +160,9 @@ fi
 # Continue with rest of config
 sudo bash -c "cat >> /etc/iiab/local_vars.yml" << EOF
 
-# Required services for Lokole
-mysql_install: True
-mysql_enabled: True
-nginx_install: True
-nginx_enabled: True
+# Disable all other services (explicit False to be clear)
+network_install: False
+network_enabled: False
 EOF
 
 echo "Configuration written to /etc/iiab/local_vars.yml"
@@ -186,14 +183,34 @@ sudo ./scripts/ansible 2>&1 | tee /tmp/ansible-install.log
 echo "✅ Ansible installed successfully"
 
 #
-# STEP 5: Run IIAB Installation
+# STEP 5: Run IIAB Installation (minimal - only roles needed for Lokole)
 #
 echo ""
-echo "🛠️  Step 5: Running IIAB installation..."
-echo "This may take 10-15 minutes..."
+echo "🛠️  Step 5: Running minimal IIAB installation for Lokole..."
+echo "This installs only: 0-init + nginx + lokole"
+echo "This may take 3-5 minutes..."
 
-# Run installation with logging
-sudo ./iiab-install 2>&1 | tee /tmp/iiab-install.log
+# Create state file first (required by roles)
+sudo mkdir -p /etc/iiab
+sudo touch /etc/iiab/iiab_state.yml
+
+# Initialize IIAB (required first step)
+echo ""
+echo "Step 5a: Running 0-init role..."
+sudo ./runrole 0-init 2>&1 | tee /tmp/iiab-init.log
+
+# Install nginx (required for Lokole)
+echo ""
+echo "Step 5b: Installing nginx..."
+sudo ./runrole nginx 2>&1 | tee -a /tmp/iiab-install.log
+
+# Install lokole (our target)
+echo ""
+echo "Step 5c: Installing lokole..."
+sudo ./runrole lokole 2>&1 | tee -a /tmp/iiab-install.log
+
+echo ""
+echo "✅ Minimal IIAB installation completed"
 
 #
 # STEP 6: Verify Installation
@@ -207,37 +224,65 @@ if [ ! -f /etc/iiab/iiab_state.yml ]; then
     exit 1
 fi
 
-echo "✅ IIAB installation completed (state file exists)"
-
-# Check if Lokole is installed - look for systemd service files
-if [ ! -f /etc/systemd/system/opwen_webapp.service ]; then
-    echo "❌ ERROR: Lokole webapp service file not found!"
-    echo "Expected: /etc/systemd/system/opwen_webapp.service"
-    ls -la /etc/systemd/system/opwen* 2>&1 || echo "No opwen services found"
+# Check if lokole_installed is True in iiab_state.yml
+if ! grep -q "^lokole_installed: True" /etc/iiab/iiab_state.yml; then
+    echo "❌ ERROR: lokole_installed not set to True in /etc/iiab/iiab_state.yml"
+    echo "Contents of iiab_state.yml:"
+    cat /etc/iiab/iiab_state.yml
     exit 1
 fi
 
-echo "✅ Lokole systemd services configured"
+echo "✅ IIAB installation completed - lokole_installed: True"
 
-# Check if Lokole directories exist
-if [ ! -d /var/lib/opwen ]; then
-    echo "⚠️  WARNING: Lokole data directory /var/lib/opwen not found"
+# Check if Lokole virtualenv exists
+if [ ! -d /library/lokole/venv ]; then
+    echo "❌ ERROR: Lokole virtualenv not found at /library/lokole/venv"
+    ls -la /library/lokole/ 2>&1 || echo "  /library/lokole directory not found"
+    exit 1
 fi
 
-# Try to find pip and check for opwen package
-PYTHON_BIN=$(which python3 2>/dev/null || which python 2>/dev/null || echo "")
-if [ -n "$PYTHON_BIN" ]; then
-    echo "Using Python: $PYTHON_BIN"
-    $PYTHON_BIN -c "import opwen_email_client; print('✅ Lokole package version:', opwen_email_client.__version__)" 2>&1 || echo "⚠️  Could not import opwen_email_client"
-else
-    echo "⚠️  Python not found in PATH (this might be OK if services are configured)"
-fi
+echo "✅ Lokole virtualenv exists at /library/lokole/venv"
 
-# Check service status (informational only)
+# Check if supervisor config files exist
+LOKOLE_SUPERVISOR_CONFS=(
+    "lokole_gunicorn.conf"
+    "lokole_celery_beat.conf"
+    "lokole_celery_worker.conf"
+    "lokole_restarter.conf"
+)
+
+for conf in "${LOKOLE_SUPERVISOR_CONFS[@]}"; do
+    if [ ! -f "/etc/supervisor/conf.d/${conf}" ]; then
+        echo "❌ ERROR: Supervisor config not found: /etc/supervisor/conf.d/${conf}"
+        exit 1
+    fi
+done
+
+echo "✅ All 4 Lokole supervisor configs found"
+
+# Try to import opwen_email_client from the venv
 echo ""
-echo "Lokole service status:"
-systemctl status opwen_webapp --no-pager || echo "  webapp service not running"
-systemctl status opwen_cloudserver --no-pager || echo "  cloudserver service not running"
+echo "Checking Lokole package installation:"
+if /library/lokole/venv/bin/python -c "import opwen_email_client; print('  Version:', opwen_email_client.__version__)" 2>&1; then
+    echo "✅ Lokole package successfully imported"
+else
+    echo "❌ ERROR: Could not import opwen_email_client from virtualenv"
+    exit 1
+fi
+
+# Check supervisor service status (informational)
+echo ""
+echo "Supervisor status:"
+if systemctl is-active --quiet supervisor; then
+    echo "  ✅ Supervisor service is running"
+    
+    # Check lokole processes via supervisorctl
+    echo ""
+    echo "Lokole processes (via supervisorctl):"
+    sudo supervisorctl status | grep lokole || echo "  ⚠️  No lokole processes found (they may start on-demand)"
+else
+    echo "  ⚠️  Supervisor service not running (this might be OK for minimal installs)"
+fi
 
 #
 # STEP 7: Run Comprehensive Verification
