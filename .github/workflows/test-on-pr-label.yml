@@ -10,6 +10,7 @@ jobs:
   # Job 1: Provision Azure Spot VM runners (one per Ubuntu version)
   provision-runners:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.continue_on_error || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -19,11 +20,19 @@ jobs:
             image_offer: '0001-com-ubuntu-server-jammy'
             image_sku: '22_04-lts-gen2'
             python_expected: '3.10'
+            continue_on_error: false
           - ubuntu_version: '24.04'
             ubuntu_lts: '24.04-LTS'
             image_offer: 'ubuntu-24_04-lts'
             image_sku: 'server'
             python_expected: '3.12'
+            continue_on_error: false
+          - ubuntu_version: '26.04'
+            ubuntu_lts: '26.04-LTS'
+            image_offer: 'ubuntu-26_04-lts'
+            image_sku: 'server'
+            python_expected: '3.13'
+            continue_on_error: true
     
     steps:
       - name: Checkout test repository
@@ -89,16 +98,20 @@ jobs:
       - azure-spot
       - ubuntu-${{ matrix.ubuntu_version }}
     timeout-minutes: 90
+    continue-on-error: ${{ matrix.continue_on_error || false }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - ubuntu_version: '22.04'
             python_expected: '3.10'
+            continue_on_error: false
           - ubuntu_version: '24.04'
             python_expected: '3.12'
+            continue_on_error: false
           - ubuntu_version: '26.04'
             python_expected: '3.13'
+            continue_on_error: true
             use_daily: true
     
     steps:
