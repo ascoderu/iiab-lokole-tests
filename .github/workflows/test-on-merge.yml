@@ -7,41 +7,32 @@ on:
       - iiab-merged
 
 jobs:
+  # Job 0: Generate matrix from ubuntu-versions.yml
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: pip install pyyaml
+      
+      - name: Generate matrix from ubuntu-versions.yml
+        id: set-matrix
+        run: |
+          MATRIX=$(python3 .github/scripts/generate-matrix.py)
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $MATRIX"
+
   # Job 1: Provision Azure VM runner
-  # Matrix configuration: See ../.github/ubuntu-versions.yml for centralized config
   provision-runner:
+    needs: generate-matrix
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false  # Test all versions even if one fails
-      matrix:
-        include:
-          - ubuntu_version: '24.04'
-            ubuntu_lts: '24.04-LTS'
-            image_offer: 'ubuntu-24_04-lts'
-            image_sku: 'server'
-            python_expected: '3.12'
-            continue_on_error: false
-          
-          - ubuntu_version: '25.04'
-            ubuntu_lts: '25.04'
-            image_offer: 'ubuntu-25_04'
-            image_sku: 'server'
-            python_expected: '3.12'
-            continue_on_error: true
-          
-          - ubuntu_version: '25.10'
-            ubuntu_lts: '25.10'
-            image_offer: 'ubuntu-25_10'
-            image_sku: 'server'
-            python_expected: '3.13'
-            continue_on_error: true
-          
-          - ubuntu_version: '26.04'
-            ubuntu_lts: '26.04-LTS'
-            image_offer: 'ubuntu-26_04-lts-daily'
-            image_sku: 'server'
-            python_expected: '3.14'
-            continue_on_error: true
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:
       - name: Checkout test repository
@@ -66,17 +57,16 @@ jobs:
 
   # Job 2: Run tests on Azure VM
   test-merged-version:
-    needs: provision-runner
+    needs: [generate-matrix, provision-runner]
     runs-on:
       - self-hosted
       - azure
       - ubuntu-${{ matrix.ubuntu_version }}
     timeout-minutes: 90
+    continue-on-error: ${{ matrix.continue_on_error || false }}
     strategy:
-      matrix:
-        include:
-          - ubuntu_version: '24.04'
-            python_expected: '3.12'
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:
       - name: Checkout test repository
