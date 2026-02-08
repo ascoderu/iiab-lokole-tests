@@ -109,14 +109,10 @@ echo "🔧 Step 3: Configuring IIAB..."
 sudo mkdir -p /etc/iiab
 
 # Determine Lokole configuration
-LOKOLE_CONFIG=""
 if [ -n "$LOKOLE_COMMIT" ]; then
-    echo "Configuring Lokole from commit: ${LOKOLE_COMMIT}"
-    LOKOLE_CONFIG="lokole_commit: '${LOKOLE_COMMIT}'"
-    LOKOLE_CONFIG="${LOKOLE_CONFIG}\nlokole_repo: 'https://github.com/${LOKOLE_REPO}.git'"
+    echo "Configuring Lokole from commit: ${LOKOLE_COMMIT} (repo: ${LOKOLE_REPO})"
 elif [ -n "$LOKOLE_VERSION" ]; then
     echo "Configuring Lokole version: ${LOKOLE_VERSION}"
-    LOKOLE_CONFIG="lokole_version: '${LOKOLE_VERSION}'"
 else
     echo "Using latest Lokole from PyPI"
 fi
@@ -148,7 +144,22 @@ stage9: False
 # Lokole-specific configuration
 lokole_install: True
 lokole_enabled: True
-${LOKOLE_CONFIG}
+EOF
+
+# Add Lokole commit/version config conditionally
+if [ -n "$LOKOLE_COMMIT" ]; then
+    sudo bash -c "cat >> /etc/iiab/local_vars.yml" << EOF
+lokole_commit: '${LOKOLE_COMMIT}'
+lokole_repo: 'https://github.com/${LOKOLE_REPO}.git'
+EOF
+elif [ -n "$LOKOLE_VERSION" ]; then
+    sudo bash -c "cat >> /etc/iiab/local_vars.yml" << EOF
+lokole_version: '${LOKOLE_VERSION}'
+EOF
+fi
+
+# Continue with rest of config
+sudo bash -c "cat >> /etc/iiab/local_vars.yml" << EOF
 
 # Minimal services for testing
 mysql_install: True
