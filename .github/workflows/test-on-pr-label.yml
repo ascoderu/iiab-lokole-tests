@@ -8,6 +8,7 @@ on:
 
 jobs:
   # Job 1: Provision Azure VM runners (one per Ubuntu version)
+  # Matrix configuration: See ../.github/ubuntu-versions.yml for centralized config
   provision-runners:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.continue_on_error || false }}
@@ -16,15 +17,35 @@ jobs:
       max-parallel: 1 # Sequential provisioning due to Azure VM quota (3 cores)
       matrix:
         include:
-          # Note: Only testing Ubuntu 24.04 (IIAB master requirement)
-          # Ubuntu 22.04: Not supported by IIAB master
-          # Ubuntu 26.04: Image not yet available in Azure
+          # Testing all IIAB-supported Ubuntu versions (24.04, 25.04, 25.10, 26.04-daily)
+          # See ../.github/ubuntu-versions.yml for detailed configuration
           - ubuntu_version: '24.04'
             ubuntu_lts: '24.04-LTS'
             image_offer: 'ubuntu-24_04-lts'
             image_sku: 'server'
             python_expected: '3.12'
-            continue_on_error: false
+            continue_on_error: false  # Stable LTS - block on failures
+          
+          - ubuntu_version: '25.04'
+            ubuntu_lts: '25.04'
+            image_offer: 'ubuntu-25_04'
+            image_sku: 'server'
+            python_expected: '3.12'
+            continue_on_error: true  # Interim release - don't block
+          
+          - ubuntu_version: '25.10'
+            ubuntu_lts: '25.10'
+            image_offer: 'ubuntu-25_10'
+            image_sku: 'server'
+            python_expected: '3.13'
+            continue_on_error: true  # Interim release - don't block
+          
+          - ubuntu_version: '26.04'
+            ubuntu_lts: '26.04-LTS'
+            image_offer: 'ubuntu-26_04-lts-daily'
+            image_sku: 'server'
+            python_expected: '3.14'
+            continue_on_error: true  # Daily pre-release - don't block
 
     steps:
       - name: Checkout test repository
