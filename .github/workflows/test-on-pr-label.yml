@@ -268,11 +268,10 @@ jobs:
         run: |
           echo "Finding all resources for run ID: ${{ github.run_id }}"
 
-          # Get all resource IDs with matching runId tag
+          # Get all resource IDs with matching runId tag (query handles tag filtering)
           RESOURCE_IDS=$(az resource list \
             --resource-group iiab-lokole-tests-rg \
-            --tag runId=${{ github.run_id }} \
-            --query "[].id" \
+            --query "[?tags.runId=='${{ github.run_id }}'].id" \
             -o tsv)
 
           if [ -z "$RESOURCE_IDS" ]; then

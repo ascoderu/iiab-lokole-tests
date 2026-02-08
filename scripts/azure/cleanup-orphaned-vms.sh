@@ -89,22 +89,23 @@ echo "$ORPHANED_VMS" | jq -r '.[] | "\(.runId)|\(.name)"' | while IFS='|' read -
             --force-deletion \
             > /dev/null 2>&1 || echo -e "${RED}  ❌ Failed to delete VM${NC}"
     else
-        # Get all resources with this runId
+        # Get all resources with this runId using query filter
         RESOURCE_IDS=$(az resource list \
             --resource-group "$RESOURCE_GROUP" \
-            --tag runId="$run_id" \
-            --query "[].id" \
+            --query "[?tags.runId=='$run_id'].id" \
             -o tsv)
         
-        RESOURCE_COUNT=$(echo "$RESOURCE_IDS" | wc -l)
+        RESOURCE_COUNT=$(echo "$RESOURCE_IDS" | grep -c . || echo 0)
         echo "  Found ${RESOURCE_COUNT} resource(s) to delete"
         
         # Delete all resources
-        echo "$RESOURCE_IDS" | while read -r resource_id; do
-            RESOURCE_NAME=$(basename "$resource_id")
-            echo "    Deleting: ${RESOURCE_NAME}"
-            az resource delete --ids "$resource_id" --no-wait > /dev/null 2>&1 || echo -e "${RED}      Failed${NC}"
-        done
+        if [ -n "$RESOURCE_IDS" ]; then
+            echo "$RESOURCE_IDS" | while read -r resource_id; do
+                RESOURCE_NAME=$(basename "$resource_id")
+                echo "    Deleting: ${RESOURCE_NAME}"
+                az resource delete --ids "$resource_id" --no-wait > /dev/null 2>&1 || echo -e "${RED}      Failed${NC}"
+            done
+        fi
     fi
 done
 
