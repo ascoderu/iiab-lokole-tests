@@ -257,8 +257,8 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     storageProfile: {
       imageReference: {
         publisher: 'Canonical'
-        offer: ubuntuVersion == '24.04-LTS' ? 'ubuntu-24_04-lts' : '0001-com-ubuntu-server-jammy'
-        sku: ubuntuVersion == '24.04-LTS' ? 'server' : ubuntuVersion
+        offer: 'ubuntu-24_04-lts'
+        sku: 'server-gen2'
         version: 'latest'
       }
       osDisk: {

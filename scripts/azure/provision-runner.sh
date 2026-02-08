@@ -16,10 +16,10 @@ NC='\033[0m' # No Color
 
 # Configuration
 RESOURCE_GROUP="iiab-lokole-tests-rg"
-LOCATION="westus2"  # Changed from eastus due to capacity issues
+LOCATION="eastus"
 BICEP_TEMPLATE="${ROOT_DIR}/infrastructure/azure/main.bicep"
 VM_NAME=""
-VM_SIZE="Standard_B2s"
+VM_SIZE="Standard_D2s_v3"
 UBUNTU_VERSION="22.04-LTS"
 USE_SPOT=true
 PR_NUMBER=""
