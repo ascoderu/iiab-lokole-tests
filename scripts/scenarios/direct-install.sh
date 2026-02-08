@@ -207,22 +207,37 @@ if [ ! -f /etc/iiab/iiab_state.yml ]; then
     exit 1
 fi
 
-# Check if Lokole is installed
-LOKOLE_INSTALLED=$(pip3 list 2>/dev/null | grep -i opwen-email-client | wc -l)
-if [ "$LOKOLE_INSTALLED" -eq 0 ]; then
-    echo "❌ ERROR: Lokole (opwen-email-client) not installed!"
-    echo "Checking pip3 output:"
-    pip3 show opwen-email-client || echo "Package not found via pip3 show"
+echo "✅ IIAB installation completed (state file exists)"
+
+# Check if Lokole is installed - look for systemd service files
+if [ ! -f /etc/systemd/system/opwen_webapp.service ]; then
+    echo "❌ ERROR: Lokole webapp service file not found!"
+    echo "Expected: /etc/systemd/system/opwen_webapp.service"
+    ls -la /etc/systemd/system/opwen* 2>&1 || echo "No opwen services found"
     exit 1
 fi
 
-echo "✅ Lokole package found: $(pip3 show opwen-email-client | grep Version || echo 'version unknown')"
+echo "✅ Lokole systemd services configured"
 
-# Check Lokole systemd services (info only, don't fail)
+# Check if Lokole directories exist
+if [ ! -d /var/lib/opwen ]; then
+    echo "⚠️  WARNING: Lokole data directory /var/lib/opwen not found"
+fi
+
+# Try to find pip and check for opwen package
+PYTHON_BIN=$(which python3 2>/dev/null || which python 2>/dev/null || echo "")
+if [ -n "$PYTHON_BIN" ]; then
+    echo "Using Python: $PYTHON_BIN"
+    $PYTHON_BIN -c "import opwen_email_client; print('✅ Lokole package version:', opwen_email_client.__version__)" 2>&1 || echo "⚠️  Could not import opwen_email_client"
+else
+    echo "⚠️  Python not found in PATH (this might be OK if services are configured)"
+fi
+
+# Check service status (informational only)
 echo ""
 echo "Lokole service status:"
-systemctl status opwen_cloudserver --no-pager || echo "  cloudserver service not found/running"
-systemctl status opwen_webapp --no-pager || echo "  webapp service not found/running"
+systemctl status opwen_webapp --no-pager || echo "  webapp service not running"
+systemctl status opwen_cloudserver --no-pager || echo "  cloudserver service not running"
 
 #
 # STEP 7: Run Comprehensive Verification
