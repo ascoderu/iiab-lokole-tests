@@ -112,6 +112,8 @@ jobs:
           echo "pr_ref=${{ github.event.client_payload.ref }}" >> $GITHUB_OUTPUT
           echo "pr_sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
           echo "pr_repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
+          echo "lokole_commit=${{ github.event.client_payload.lokole_commit }}" >> $GITHUB_OUTPUT
+          echo "lokole_repo=${{ github.event.client_payload.lokole_repo }}" >> $GITHUB_OUTPUT
 
       - name: Make scripts executable
         run: |
@@ -123,11 +125,22 @@ jobs:
         id: test
         run: |
           # Run IIAB installation directly on Azure VM (no nested VMs)
-          ./scripts/scenarios/direct-install.sh \
-            --pr-repo "${{ steps.pr_details.outputs.pr_repo }}" \
-            --pr-ref "${{ steps.pr_details.outputs.pr_ref }}" \
-            --pr-sha "${{ steps.pr_details.outputs.pr_sha }}" \
-            --pr-number "${{ steps.pr_details.outputs.pr_number }}"
+          ARGS="--pr-repo \"${{ steps.pr_details.outputs.pr_repo }}\" \
+            --pr-ref \"${{ steps.pr_details.outputs.pr_ref }}\" \
+            --pr-sha \"${{ steps.pr_details.outputs.pr_sha }}\" \
+            --pr-number \"${{ steps.pr_details.outputs.pr_number }}\""
+          
+          # Add Lokole commit if provided
+          if [ -n "${{ steps.pr_details.outputs.lokole_commit }}" ]; then
+            ARGS="$ARGS --lokole-commit \"${{ steps.pr_details.outputs.lokole_commit }}\""
+          fi
+          
+          # Add Lokole repo if provided
+          if [ -n "${{ steps.pr_details.outputs.lokole_repo }}" ]; then
+            ARGS="$ARGS --lokole-repo \"${{ steps.pr_details.outputs.lokole_repo }}\""
+          fi
+          
+          eval ./scripts/scenarios/direct-install.sh $ARGS
 
       - name: Upload test results
         if: always()

@@ -13,6 +13,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IIAB_PR=""
 LOKOLE_COMMIT=""
 LOKOLE_VERSION=""
+LOKOLE_REPO="ascoderu/lokole"
 PR_REPO="ascoderu/lokole"
 PR_REF="master"
 PR_SHA=""
@@ -49,6 +50,10 @@ while [[ $# -gt 0 ]]; do
             LOKOLE_VERSION="$2"
             shift 2
             ;;
+        --lokole-repo)
+            LOKOLE_REPO="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -65,6 +70,7 @@ echo "PR Ref: ${PR_REF}"
 [ -n "$PR_NUMBER" ] && echo "PR Number: #${PR_NUMBER}"
 [ -n "$IIAB_PR" ] && echo "IIAB PR: #${IIAB_PR}"
 [ -n "$LOKOLE_COMMIT" ] && echo "Lokole Commit: ${LOKOLE_COMMIT}"
+[ -n "$LOKOLE_REPO" ] && [ "$LOKOLE_REPO" != "ascoderu/lokole" ] && echo "Lokole Repo: ${LOKOLE_REPO}"
 [ -n "$LOKOLE_VERSION" ] && echo "Lokole Version: ${LOKOLE_VERSION}"
 echo "==============================================================================="
 
@@ -107,7 +113,7 @@ LOKOLE_CONFIG=""
 if [ -n "$LOKOLE_COMMIT" ]; then
     echo "Configuring Lokole from commit: ${LOKOLE_COMMIT}"
     LOKOLE_CONFIG="lokole_commit: '${LOKOLE_COMMIT}'"
-    LOKOLE_CONFIG="${LOKOLE_CONFIG}\nlokole_repo: 'https://github.com/${PR_REPO}.git'"
+    LOKOLE_CONFIG="${LOKOLE_CONFIG}\nlokole_repo: 'https://github.com/${LOKOLE_REPO}.git'"
 elif [ -n "$LOKOLE_VERSION" ]; then
     echo "Configuring Lokole version: ${LOKOLE_VERSION}"
     LOKOLE_CONFIG="lokole_version: '${LOKOLE_VERSION}'"
