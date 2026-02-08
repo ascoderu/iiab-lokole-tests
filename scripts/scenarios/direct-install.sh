@@ -148,18 +148,26 @@ ${LOKOLE_CONFIG}
 mysql_install: True
 mysql_enabled: True
 postgresql_install: False
+postgresql_enabled: False
 apache_install: True
 apache_enabled: True
 nginx_install: True
 nginx_enabled: True
 
 # Disable unnecessary services to speed up installation
+# NOTE: Must disable both *_install AND *_enabled (IIAB doesn't support uninstalls)
 kiwix_install: False
+kiwix_enabled: False
 calibre_install: False
+calibre_enabled: False
 kalite_install: False
+kalite_enabled: False
 kolibri_install: False
+kolibri_enabled: False
 nodered_install: False
+nodered_enabled: False
 mosquitto_install: False
+mosquitto_enabled: False
 EOF
 
 echo "Configuration written to /etc/iiab/local_vars.yml"
