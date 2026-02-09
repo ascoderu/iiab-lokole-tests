@@ -97,6 +97,24 @@ jobs:
           echo "sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
           echo "repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
 
+      - name: Get dependency master SHAs
+        id: deps_sha
+        run: |
+          # Fetch master branches if not testing them directly
+          REPO="${{ steps.merge_details.outputs.repo }}"
+          
+          if [[ "$REPO" == *"iiab"* ]]; then
+            # Testing IIAB merge - get Lokole master
+            LOKOLE_SHA=$(git ls-remote https://github.com/ascoderu/lokole.git refs/heads/master | awk '{print $1}')
+            echo "lokole_sha=$LOKOLE_SHA" >> $GITHUB_OUTPUT
+            echo "Testing IIAB merge - using Lokole master: $LOKOLE_SHA"
+          elif [[ "$REPO" == *"lokole"* ]]; then
+            # Testing Lokole merge - get IIAB master
+            IIAB_SHA=$(git ls-remote https://github.com/iiab/iiab.git refs/heads/master | awk '{print $1}')
+            echo "iiab_sha=$IIAB_SHA" >> $GITHUB_OUTPUT
+            echo "Testing Lokole merge - using IIAB master: $IIAB_SHA"
+          fi
+
       - name: Make scripts executable
         run: |
           chmod +x scripts/scenarios/*.sh
@@ -109,17 +127,19 @@ jobs:
           REPO="${{ steps.merge_details.outputs.repo }}"
 
           if [[ "$REPO" == *"lokole"* ]]; then
-            # Test merged Lokole commit on Azure VM (direct installation, no nested VMs)
+            # Test merged Lokole commit on Azure VM with IIAB master
             ./scripts/scenarios/direct-install.sh \
               --pr-repo "${{ steps.merge_details.outputs.repo }}" \
               --pr-sha "${{ steps.merge_details.outputs.sha }}" \
               --lokole-commit "${{ steps.merge_details.outputs.sha }}"
           elif [[ "$REPO" == *"iiab"* ]]; then
-            # Test merged IIAB branch on Azure VM (direct installation, no nested VMs)
+            # Test merged IIAB branch on Azure VM with Lokole master
             ./scripts/scenarios/direct-install.sh \
               --pr-repo "${{ steps.merge_details.outputs.repo }}" \
               --pr-sha "${{ steps.merge_details.outputs.sha }}" \
-              --pr-ref "${{ steps.merge_details.outputs.branch }}"
+              --pr-ref "${{ steps.merge_details.outputs.branch }}" \
+              --lokole-commit "${{ steps.deps_sha.outputs.lokole_sha }}" \
+              --lokole-repo "ascoderu/lokole"
           fi
 
       - name: Upload test results
