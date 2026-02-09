@@ -387,7 +387,12 @@ main() {
     check_prerequisites
     generate_ssh_key
     deploy_vm
-    wait_for_runner
+    
+    # Wait for runner and exit with error if it fails
+    if ! wait_for_runner; then
+        echo -e "${RED}❌ Runner provisioning failed${NC}"
+        exit 1
+    fi
     
     echo -e "${GREEN}✅ Runner provisioned successfully!${NC}"
     echo ""

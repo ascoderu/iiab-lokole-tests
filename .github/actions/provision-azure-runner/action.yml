@@ -49,6 +49,8 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
+        set -euo pipefail  # Exit on any error, preserve pipe exit codes
+        
         chmod +x scripts/azure/provision-runner.sh
 
         ARGS="--ubuntu-version ${{ inputs.ubuntu-lts }} \
@@ -64,18 +66,10 @@ runs:
           ARGS="$ARGS --pr-number ${{ inputs.pr-number }}"
         fi
 
-        # Run provision script with tee but preserve exit code
-        ./scripts/azure/provision-runner.sh $ARGS | tee provision-log-${{ inputs.ubuntu-version }}.txt
+        # Run provision script - with pipefail, tee will preserve exit code
+        ./scripts/azure/provision-runner.sh $ARGS 2>&1 | tee provision-log-${{ inputs.ubuntu-version }}.txt
 
-        # Capture exit code from provision script (PIPESTATUS[0] = first command in pipe)
-        PROVISION_EXIT=${PIPESTATUS[0]}
-
-        # Extract VM name from logs
+        # Extract VM name from logs (only reached if provision succeeded)
         VM_NAME=$(grep "^  Name:" provision-log-${{ inputs.ubuntu-version }}.txt | awk '{print $NF}' || echo "none")
         echo "vm_name=$VM_NAME" >> $GITHUB_OUTPUT
         echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ inputs.ubuntu-version }}"
-
-        # Exit with original provision script exit code
-        # Note: provision-runner.sh already waits for runner to come online,
-        # so we don't need a separate wait step here
-        exit $PROVISION_EXIT
