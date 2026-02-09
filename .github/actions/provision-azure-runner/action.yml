@@ -76,35 +76,6 @@ runs:
         echo "::notice title=Azure VM Provisioned::$VM_NAME for Ubuntu ${{ inputs.ubuntu-version }}"
 
         # Exit with original provision script exit code
+        # Note: provision-runner.sh already waits for runner to come online,
+        # so we don't need a separate wait step here
         exit $PROVISION_EXIT
-
-    - name: Wait for runner registration
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-      run: |
-        echo "Checking for runner with labels: self-hosted, azure, ubuntu-${{ inputs.ubuntu-version }}"
-
-        MAX_WAIT=180  # Maximum 3 minutes
-        INTERVAL=10   # Check every 10 seconds
-        ELAPSED=0
-
-        while [ $ELAPSED -lt $MAX_WAIT ]; do
-          # Check for online runners with matching labels
-          RUNNER_COUNT=$(gh api repos/${{ github.repository }}/actions/runners \
-            --jq '[.runners[] | select(.status == "online" and (.labels | map(.name) | contains(["self-hosted", "azure", "ubuntu-${{ inputs.ubuntu-version }}"])))] | length')
-          
-          if [ "$RUNNER_COUNT" -gt 0 ]; then
-            echo "✅ Runner is online and ready (found $RUNNER_COUNT matching runner(s))"
-            break
-          fi
-          
-          echo "⏳ Waiting for runner... (${ELAPSED}s/${MAX_WAIT}s)"
-          sleep $INTERVAL
-          ELAPSED=$((ELAPSED + INTERVAL))
-        done
-
-        if [ $ELAPSED -ge $MAX_WAIT ]; then
-          echo "❌ Timeout: Runner did not come online within ${MAX_WAIT}s"
-          exit 1
-        fi

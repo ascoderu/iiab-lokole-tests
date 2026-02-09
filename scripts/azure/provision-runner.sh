@@ -27,7 +27,7 @@ USE_SPOT=true
 PR_NUMBER=""
 RUN_ID="${GITHUB_RUN_ID:-$(date +%s)}"
 CLEANUP_ON_EXIT=true
-MAX_WAIT_SECONDS=900  # 15 minutes to wait for runner registration (cloud-init + packages + runner setup)
+MAX_WAIT_SECONDS=600  # 10 minutes for runner registration (cloud-init + packages + runner setup)
 
 # Usage
 usage() {
@@ -279,7 +279,7 @@ deploy_vm() {
 # Wait for runner to register with GitHub
 wait_for_runner() {
     echo -e "${BLUE}⏳ Waiting for runner to register...${NC}"
-    echo "This typically takes 5-10 minutes (up to 15 min on slower builds)"
+    echo "This typically takes 3-5 minutes (up to 10 min on slower builds)"
     echo ""
     
     local start_time=$(date +%s)
@@ -309,7 +309,7 @@ wait_for_runner() {
         elif [ $elapsed -lt 420 ]; then
             stage="Registering with GitHub"
         else
-            stage="Finalizing setup (may need more time)"
+            stage="Taking longer than expected - check VM logs if timeout occurs"
         fi
         
         # Check Azure VM state every 30 seconds (not every loop to avoid rate limits)
