@@ -177,8 +177,8 @@ check_socket() {
     
     # Use vm_exec helper to handle both direct and multipass modes
     if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
-        # Direct mode - check locally
-        local exists=$([ -S "$socket_path" ] && echo true || echo false)
+        # Direct mode - check locally with sudo (socket owned by lokole user)
+        local exists=$(sudo bash -c "[ -S $socket_path ] && echo true || echo false" 2>/dev/null || echo "false")
     else
         # Multipass mode
         local exists=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "[ -S $socket_path ] && echo true || echo false" 2>/dev/null || echo "false")
