@@ -40,10 +40,10 @@ jobs:
   provision-runner:
     needs: generate-matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # Max time for VM provisioning (script timeout is 10 min)
+    timeout-minutes: 10 # Max time for VM provisioning (script timeout is 10 min)
     strategy:
       fail-fast: false # Test all versions even if one fails
-      max-parallel: 4 # Parallel provisioning (10 vCPU quota allows 5× Standard_B2s)
+      max-parallel: 2 # Parallel provisioning (10 vCPU quota allows 5× Standard_B2s)
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:
