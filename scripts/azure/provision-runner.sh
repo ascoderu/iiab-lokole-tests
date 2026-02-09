@@ -27,7 +27,7 @@ USE_SPOT=true
 PR_NUMBER=""
 RUN_ID="${GITHUB_RUN_ID:-$(date +%s)}"
 CLEANUP_ON_EXIT=true
-MAX_WAIT_SECONDS=300  # 5 minutes to wait for runner registration
+MAX_WAIT_SECONDS=900  # 15 minutes to wait for runner registration (cloud-init + packages + runner setup)
 
 # Usage
 usage() {
@@ -196,12 +196,18 @@ generate_ssh_key() {
 # Deploy VM using Bicep
 deploy_vm() {
     echo -e "${BLUE}☁️  Deploying Azure VM...${NC}"
+    echo "  VM Name: ${VM_NAME}"
+    echo "  VM Size: ${VM_SIZE}"
+    echo "  Image: ${IMAGE_OFFER}/${IMAGE_SKU}"
+    echo "  Location: ${LOCATION}"
     
     # Strip -LTS suffix from Ubuntu version for runner labels (22.04-LTS -> 22.04)
     local ubuntu_label="${UBUNTU_VERSION//-LTS/}"
     local runner_labels="self-hosted,azure,ubuntu-${ubuntu_label}"
     
-    echo "Runner labels: ${runner_labels}"
+    echo "  Runner labels: ${runner_labels}"
+    echo ""
+    echo "Provisioning resources (VNet, NSG, Public IP, NIC, VM, Extension)..."
     
     local deployment_output
     # Add timestamp to deployment name to avoid conflicts from retries
@@ -224,6 +230,7 @@ deploy_vm() {
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
         --query 'properties.outputs' \
+        --verbose \
         -o json 2>&1) || {
         echo -e "${RED}❌ VM deployment failed${NC}"
         echo "$deployment_output"
@@ -237,22 +244,51 @@ deploy_vm() {
     echo "  Public IP: ${VM_PUBLIC_IP}"
     echo "  FQDN: ${VM_FQDN}"
     echo ""
+    echo "VM is now running cloud-init to install packages and configure runner..."
+    echo ""
 }
 
 # Wait for runner to register with GitHub
 wait_for_runner() {
     echo -e "${BLUE}⏳ Waiting for runner to register...${NC}"
+    echo "This typically takes 5-10 minutes (up to 15 min on slower builds)"
+    echo ""
     
     local start_time=$(date +%s)
     local timeout=$MAX_WAIT_SECONDS
+    local last_stage=""
     
     while true; do
         local elapsed=$(($(date +%s) - start_time))
+        local minutes=$((elapsed / 60))
+        local seconds=$((elapsed % 60))
         
         if [ $elapsed -gt $timeout ]; then
-            echo -e "${RED}❌ Timeout waiting for runner registration${NC}"
+            echo -e "${RED}❌ Timeout waiting for runner registration (${minutes}m ${seconds}s)${NC}"
+            echo "Check Azure portal VM console for cloud-init logs"
             return 1
         fi
+        
+        # Determine likely stage based on elapsed time
+        local stage=""
+        if [ $elapsed -lt 60 ]; then
+            stage="VM booting (cloud-init starting)"
+        elif [ $elapsed -lt 180 ]; then
+            stage="Installing packages (apt-get update/upgrade)"
+        elif [ $elapsed -lt 300 ]; then
+            stage="Setting up GitHub runner"
+        elif [ $elapsed -lt 420 ]; then
+            stage="Registering with GitHub"
+        else
+            stage="Finalizing setup (may need more time)"
+        fi
+        
+        # Check Azure VM provisioning state
+        local vm_state=$(az vm get-instance-view \
+            --name "$VM_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus" \
+            -o tsv 2>/dev/null || echo "unknown")
         
         # Check if runner is registered
         local runner_status=$(curl -s \
@@ -262,14 +298,19 @@ wait_for_runner() {
             | jq -r ".runners[] | select(.name == \"$VM_NAME\") | .status")
         
         if [ "$runner_status" = "online" ]; then
-            echo -e "${GREEN}✓${NC} Runner registered and online"
-            echo "  Elapsed: ${elapsed}s"
+            echo -e "${GREEN}✓${NC} Runner registered and online!"
+            echo "  Total time: ${minutes}m ${seconds}s"
             echo ""
             return 0
         elif [ -n "$runner_status" ]; then
-            echo "  Runner status: ${runner_status} (waiting...)"
+            echo -e "${YELLOW}[${minutes}m ${seconds}s]${NC} Runner found with status: ${runner_status}"
+            echo "  VM: ${vm_state} | Stage: ${stage}"
         else
-            echo "  Runner not found yet (${elapsed}s elapsed)"
+            # Only print stage change or every 30 seconds
+            if [ "$stage" != "$last_stage" ] || [ $((elapsed % 30)) -eq 0 ]; then
+                echo -e "${BLUE}[${minutes}m ${seconds}s]${NC} VM: ${vm_state} | ${stage}"
+                last_stage="$stage"
+            fi
         fi
         
         sleep 10
