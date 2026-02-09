@@ -207,13 +207,25 @@ deploy_vm() {
     
     echo "  Runner labels: ${runner_labels}"
     echo ""
-    echo "Provisioning resources (VNet, NSG, Public IP, NIC, VM, Extension)..."
+    echo "Provisioning Azure resources (this takes 2-3 minutes)..."
+    echo "  - Virtual Network (shared)"
+    echo "  - Network Security Group (shared)"
+    echo "  - Public IP Address"
+    echo "  - Network Interface"
+    echo "  - Virtual Machine"
+    echo "  - VM Extension (runner setup script)"
+    echo ""
     
     local deployment_output
     # Add timestamp to deployment name to avoid conflicts from retries
     local deployment_timestamp=$(date +%s)
-    deployment_output=$(az deployment group create \
-        --name "deploy-$VM_NAME-$deployment_timestamp" \
+    local deployment_name="deploy-$VM_NAME-$deployment_timestamp"
+    
+    # Start deployment (let Azure show progress to console)
+    echo "Starting deployment: $deployment_name"
+    echo ""
+    az deployment group create \
+        --name "$deployment_name" \
         --resource-group "$RESOURCE_GROUP" \
         --template-file "$BICEP_TEMPLATE" \
         --parameters \
@@ -229,16 +241,31 @@ deploy_vm() {
             runnerLabels="$runner_labels" \
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
-        --query 'properties.outputs' \
-        --verbose \
-        -o json 2>&1) || {
+        --no-prompt || {
         echo -e "${RED}❌ VM deployment failed${NC}"
-        echo "$deployment_output"
         exit 1
     }
     
-    VM_PUBLIC_IP=$(echo "$deployment_output" | jq -r '.publicIP.value')
-    VM_FQDN=$(echo "$deployment_output" | jq -r '.fqdn.value')
+    echo ""
+    echo "Querying deployment outputs..."
+    
+    # Query outputs after successful deployment
+    deployment_output=$(az deployment group show \
+        --name "$deployment_name" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query 'properties.outputs' \
+        -o json)
+    
+    # Parse outputs
+    VM_PUBLIC_IP=$(echo "$deployment_output" | jq -r '.publicIP.value' 2>/dev/null)
+    VM_FQDN=$(echo "$deployment_output" | jq -r '.fqdn.value' 2>/dev/null)
+    
+    if [ -z "$VM_PUBLIC_IP" ] || [ "$VM_PUBLIC_IP" = "null" ]; then
+        echo -e "${RED}❌ Failed to parse deployment outputs${NC}"
+        echo "Deployment output:"
+        echo "$deployment_output"
+        exit 1
+    fi
     
     echo -e "${GREEN}✓${NC} VM deployed successfully"
     echo "  Public IP: ${VM_PUBLIC_IP}"
@@ -256,7 +283,8 @@ wait_for_runner() {
     
     local start_time=$(date +%s)
     local timeout=$MAX_WAIT_SECONDS
-    local last_stage=""
+    local last_status_check=0
+    local vm_state="unknown"
     
     while true; do
         local elapsed=$(($(date +%s) - start_time))
@@ -283,12 +311,15 @@ wait_for_runner() {
             stage="Finalizing setup (may need more time)"
         fi
         
-        # Check Azure VM provisioning state
-        local vm_state=$(az vm get-instance-view \
-            --name "$VM_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus" \
-            -o tsv 2>/dev/null || echo "unknown")
+        # Check Azure VM state every 30 seconds (not every loop to avoid rate limits)
+        if [ $((elapsed - last_status_check)) -ge 30 ]; then
+            vm_state=$(az vm get-instance-view \
+                --name "$VM_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus" \
+                -o tsv 2>/dev/null || echo "unknown")
+            last_status_check=$elapsed
+        fi
         
         # Check if runner is registered
         local runner_status=$(curl -s \
@@ -303,14 +334,11 @@ wait_for_runner() {
             echo ""
             return 0
         elif [ -n "$runner_status" ]; then
-            echo -e "${YELLOW}[${minutes}m ${seconds}s]${NC} Runner found with status: ${runner_status}"
-            echo "  VM: ${vm_state} | Stage: ${stage}"
+            printf "${YELLOW}[%dm %02ds]${NC} Runner found with status: ${runner_status}\n" "$minutes" "$seconds"
+            printf "  VM: ${vm_state} | Stage: ${stage}\n"
         else
-            # Only print stage change or every 30 seconds
-            if [ "$stage" != "$last_stage" ] || [ $((elapsed % 30)) -eq 0 ]; then
-                echo -e "${BLUE}[${minutes}m ${seconds}s]${NC} VM: ${vm_state} | ${stage}"
-                last_stage="$stage"
-            fi
+            # Print progress update
+            printf "${BLUE}[%dm %02ds]${NC} VM: ${vm_state} | ${stage}\n" "$minutes" "$seconds"
         fi
         
         sleep 10
