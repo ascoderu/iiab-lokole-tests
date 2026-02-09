@@ -241,8 +241,9 @@ deploy_vm() {
             runnerLabels="$runner_labels" \
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
-        --no-prompt || {
+        --output none || {
         echo -e "${RED}❌ VM deployment failed${NC}"
+        echo "Check deployment status with: az deployment group show --name $deployment_name --resource-group $RESOURCE_GROUP"
         exit 1
     }
     

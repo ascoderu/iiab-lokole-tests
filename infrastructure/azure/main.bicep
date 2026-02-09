@@ -330,11 +330,25 @@ echo "Script started at: $(date)"
 
 # Wait for cloud-init to complete
 echo "Waiting for cloud-init..."
-cloud-init status --wait || {{
-  echo "ERROR: cloud-init failed"
+if cloud-init status --wait; then
+  echo "cloud-init completed successfully"
+else
+  CLOUD_INIT_EXIT=$?
+  echo "ERROR: cloud-init failed with exit code $CLOUD_INIT_EXIT"
+  echo ""
+  echo "Cloud-init status:"
+  cloud-init status --long || true
+  echo ""
+  echo "Cloud-init result:"
+  cat /run/cloud-init/result.json 2>/dev/null || echo "No result.json found"
+  echo ""
+  echo "Last 50 lines of cloud-init log:"
+  tail -50 /var/log/cloud-init.log 2>/dev/null || echo "No cloud-init.log found"
+  echo ""
+  echo "Last 50 lines of cloud-init-output log:"
+  tail -50 /var/log/cloud-init-output.log 2>/dev/null || echo "No cloud-init-output.log found"
   exit 1
-}}
-echo "cloud-init completed successfully"
+fi
 
 # Set variables (passed from Bicep)
 GITHUB_TOKEN="{0}"
