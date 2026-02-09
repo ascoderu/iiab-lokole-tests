@@ -221,13 +221,12 @@ deploy_vm() {
     local deployment_timestamp=$(date +%s)
     local deployment_name="deploy-$VM_NAME-$deployment_timestamp"
     
-    # Start deployment (let Azure show progress to console)
+    # Start deployment in background and poll for status
     echo "Starting deployment: $deployment_name"
     echo ""
     
-    # Use timeout to prevent hanging (Azure CLI timeout is 600s = 10min)
-    # This matches our MAX_WAIT_SECONDS for runner registration
-    timeout 600 az deployment group create \
+    # Start deployment with --no-wait (returns immediately)
+    az deployment group create \
         --name "$deployment_name" \
         --resource-group "$RESOURCE_GROUP" \
         --template-file "$BICEP_TEMPLATE" \
@@ -244,16 +243,46 @@ deploy_vm() {
             runnerLabels="$runner_labels" \
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
-        --verbose || {
-        local exit_code=$?
-        if [ $exit_code -eq 124 ]; then
-            echo -e "${RED}❌ VM deployment timed out after 10 minutes${NC}"
-        else
-            echo -e "${RED}❌ VM deployment failed (exit code: $exit_code)${NC}"
-        fi
-        echo "Check deployment status with: az deployment group show --name $deployment_name --resource-group $RESOURCE_GROUP"
+        --no-wait || {
+        echo -e "${RED}❌ Failed to initiate VM deployment${NC}"
         exit 1
     }
+    
+    echo "Polling deployment status..."
+    local start_time=$(date +%s)
+    local max_wait=600  # 10 minutes
+    
+    while true; do
+        local elapsed=$(($(date +%s) - start_time))
+        local minutes=$((elapsed / 60))
+        local seconds=$((elapsed % 60))
+        
+        if [ $elapsed -gt $max_wait ]; then
+            echo -e "${RED}❌ VM deployment timed out after 10 minutes${NC}"
+            echo "Check deployment status with: az deployment group show --name $deployment_name --resource-group $RESOURCE_GROUP"
+            exit 1
+        fi
+        
+        # Query deployment status
+        local deploy_status=$(az deployment group show \
+            --name "$deployment_name" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.provisioningState' \
+            -o tsv 2>/dev/null)
+        
+        if [ "$deploy_status" = "Succeeded" ]; then
+            echo -e "${GREEN}✓${NC} Deployment completed successfully (${minutes}m ${seconds}s)"
+            break
+        elif [ "$deploy_status" = "Failed" ]; then
+            echo -e "${RED}❌ VM deployment failed${NC}"
+            az deployment group show --name "$deployment_name" --resource-group "$RESOURCE_GROUP" --query 'properties.error'
+            exit 1
+        else
+            printf "${BLUE}[%dm %02ds]${NC} Deployment status: %s\n" "$minutes" "$seconds" "${deploy_status:-Unknown}"
+        fi
+        
+        sleep 10
+    done
     
     echo ""
     echo "Querying deployment outputs..."
@@ -306,18 +335,19 @@ wait_for_runner() {
             return 1
         fi
         
-        # Determine likely stage based on elapsed time
-        local stage=""
-        if [ $elapsed -lt 60 ]; then
-            stage="VM booting (cloud-init starting)"
-        elif [ $elapsed -lt 180 ]; then
-            stage="Installing packages (apt-get update/upgrade)"
-        elif [ $elapsed -lt 300 ]; then
-            stage="Setting up GitHub runner"
-        elif [ $elapsed -lt 420 ]; then
-            stage="Registering with GitHub"
-        else
-            stage="Taking longer than expected - check VM logs if timeout occurs"
+        # Check actual VM extension status (cloud-init/runner setup script)
+        local extension_status=$(az vm extension show \
+            --vm-name "$VM_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "customScript" \
+            --query 'provisioningState' \
+            -o tsv 2>/dev/null || echo "Unknown")
+        
+        local stage="Extension: ${extension_status}"
+        if [ "$extension_status" = "Succeeded" ]; then
+            stage="Runner setup complete, waiting for GitHub registration"
+        elif [ "$extension_status" = "Creating" ] || [ "$extension_status" = "Updating" ]; then
+            stage="Running cloud-init and runner setup script"
         fi
         
         # Check Azure VM state every 30 seconds (not every loop to avoid rate limits)
