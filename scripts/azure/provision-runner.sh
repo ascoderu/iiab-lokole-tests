@@ -339,7 +339,7 @@ wait_for_runner() {
         local extension_status=$(az vm extension show \
             --vm-name "$VM_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --name "customScript" \
+            --name "register-github-runner" \
             --query 'provisioningState' \
             -o tsv 2>/dev/null || echo "Unknown")
         
