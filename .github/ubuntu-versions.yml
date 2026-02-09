@@ -6,37 +6,37 @@
 
 # Currently Supported Versions
 supported_versions:
-  - version: "24.04"
-    lts: "24.04-LTS"
-    image_offer: "ubuntu-24_04-lts"
-    image_sku: "server"
-    python: "3.12"
-    status: "active"
-    notes: "Current minimum IIAB-supported version"
+  - version: '24.04'
+    lts: '24.04-LTS'
+    image_offer: 'ubuntu-24_04-lts'
+    image_sku: 'server'
+    python: '3.12'
+    status: 'active'
+    notes: 'Current minimum IIAB-supported version'
 
-  - version: "25.04"
-    image_offer: "ubuntu-25_04"
-    image_sku: "server"
-    python: "3.12"  # Ubuntu 25.04 uses Python 3.12
-    status: "available"
-    notes: "Interim release - available in Azure Marketplace"
-  
-  - version: "25.10"
-    image_offer: "ubuntu-25_10"
-    image_sku: "server"
-    python: "3.13"  # Ubuntu 25.10 uses Python 3.13
-    status: "available"
-    notes: "Interim release - available in Azure Marketplace"
+  - version: '25.04'
+    image_offer: 'ubuntu-25_04'
+    image_sku: 'server'
+    python: '3.12' # Ubuntu 25.04 uses Python 3.12
+    status: 'available'
+    notes: 'Interim release - available in Azure Marketplace'
+
+  - version: '25.10'
+    image_offer: 'ubuntu-25_10'
+    image_sku: 'server'
+    python: '3.13' # Ubuntu 25.10 uses Python 3.13
+    status: 'available'
+    notes: 'Interim release - available in Azure Marketplace'
 
 # Upcoming Versions
 upcoming_versions:
-  - version: "26.04"
-    lts: "26.04-LTS"
-    image_offer: "ubuntu-26_04-lts"
-    image_sku: "server"
-    python: "3.14"  # Python 3.14.0 released Oct 2025
-    release_date: "2026-04-23"
-    status: "pending-release"
+  - version: '26.04'
+    lts: '26.04-LTS'
+    image_offer: 'ubuntu-26_04-lts'
+    image_sku: 'server'
+    python: '3.14' # Python 3.14.0 released Oct 2025
+    release_date: '2026-04-23'
+    status: 'pending-release'
     notes: |
       Release: April 23, 2026
       Daily images already available: ubuntu-26_04-lts-daily
@@ -44,21 +44,21 @@ upcoming_versions:
 
 # Previously Supported Versions
 archived_versions:
-  - version: "22.04"
-    notes: "Not supported by IIAB master (requires 24.04+)"
+  - version: '22.04'
+    notes: 'Not supported by IIAB master (requires 24.04+)'
 
 # Azure Marketplace Discovery (2026-02-08)
 discovery_notes: |
   CORRECTION: Canonical DOES publish interim releases to Azure!
-  
+
   Available offers (verified via az cli):
     - ubuntu-24_04-lts (stable + daily)
     - ubuntu-25_04 (stable + daily) ← AVAILABLE
     - ubuntu-25_10 (stable + daily) ← AVAILABLE  
     - ubuntu-26_04-lts-daily ← Pre-release available now
-  
+
   All use same SKUs: server, minimal, server-arm64, etc.
   Image naming: ubuntu-{YY}_{MM} or ubuntu-{YY}_{MM}-lts
-  
+
   Discovery command:
     az vm image list-offers --publisher Canonical --location eastus

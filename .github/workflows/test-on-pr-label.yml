@@ -15,10 +15,10 @@ jobs:
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
-      
+
       - name: Install dependencies
         run: pip install pyyaml
-      
+
       - name: Generate matrix from ubuntu-versions.yml
         id: set-matrix
         run: |

@@ -15,10 +15,10 @@ jobs:
     steps:
       - name: Checkout test repository
         uses: actions/checkout@v4
-      
+
       - name: Install dependencies
         run: pip install pyyaml
-      
+
       - name: Generate matrix from ubuntu-versions.yml
         id: set-matrix
         run: |
@@ -31,8 +31,8 @@ jobs:
     needs: generate-matrix
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false  # Test all versions even if one fails
-      max-parallel: 4  # Parallel provisioning (10 vCPU quota allows 5× Standard_B2s)
+      fail-fast: false # Test all versions even if one fails
+      max-parallel: 4 # Parallel provisioning (10 vCPU quota allows 5× Standard_B2s)
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:

@@ -53,7 +53,7 @@ param runId string = uniqueString(resourceGroup().id, vmName)
 param maxSpotPrice string = '-1'
 
 // Variables
-var networkSecurityGroupName = '${vmName}-nsg'
+var networkSecurityGroupName = 'iiab-lokole-runners-nsg'  // Shared NSG for all runners
 var virtualNetworkName = 'iiab-lokole-vnet'
 var subnetName = 'runners-subnet'
 var publicIPAddressName = '${vmName}-pip'
@@ -150,10 +150,9 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {
     ]
   }
   tags: {
-    purpose: 'github-runner'
+    purpose: 'github-runners'
     project: 'iiab-lokole-tests'
-    prNumber: prNumber
-    runId: runId
+    // No runId - shared across all workflow runs
   }
 }
 
