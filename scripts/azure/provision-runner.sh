@@ -372,6 +372,12 @@ wait_for_runner() {
             echo "  Total time: ${minutes}m ${seconds}s"
             echo ""
             return 0
+        elif [ -n "$runner_status" ] && [ "$runner_status" != "offline" ]; then
+            # Runner found with non-offline status - accept it
+            echo -e "${GREEN}✓${NC} Runner registered with status: ${runner_status}"
+            echo "  Total time: ${minutes}m ${seconds}s"
+            echo ""
+            return 0
         elif [ -n "$runner_status" ]; then
             printf "${YELLOW}[%dm %02ds]${NC} Runner found with status: ${runner_status}\n" "$minutes" "$seconds"
             printf "  VM: ${vm_state} | Stage: ${stage}\n"
