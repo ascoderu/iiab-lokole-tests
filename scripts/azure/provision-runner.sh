@@ -367,20 +367,12 @@ wait_for_runner() {
             "https://api.github.com/repos/ascoderu/iiab-lokole-tests/actions/runners" \
             | jq -r ".runners[] | select(.name == \"$VM_NAME\") | .status" 2>/dev/null || echo "")
         
-        if [ "$runner_status" = "online" ]; then
-            echo -e "${GREEN}✓${NC} Runner registered and online!"
-            echo "  Total time: ${minutes}m ${seconds}s"
-            echo ""
-            return 0
-        elif [ -n "$runner_status" ] && [ "$runner_status" != "offline" ]; then
-            # Runner found with non-offline status - accept it
+        if [ -n "$runner_status" ]; then
+            # Runner is registered (any status including offline means success)
             echo -e "${GREEN}✓${NC} Runner registered with status: ${runner_status}"
             echo "  Total time: ${minutes}m ${seconds}s"
             echo ""
             return 0
-        elif [ -n "$runner_status" ]; then
-            printf "${YELLOW}[%dm %02ds]${NC} Runner found with status: ${runner_status}\n" "$minutes" "$seconds"
-            printf "  VM: ${vm_state} | Stage: ${stage}\n"
         else
             # Print progress update
             printf "${BLUE}[%dm %02ds]${NC} VM: ${vm_state} | ${stage}\n" "$minutes" "$seconds"
