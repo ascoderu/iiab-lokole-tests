@@ -224,7 +224,10 @@ deploy_vm() {
     # Start deployment (let Azure show progress to console)
     echo "Starting deployment: $deployment_name"
     echo ""
-    az deployment group create \
+    
+    # Use timeout to prevent hanging (Azure CLI timeout is 600s = 10min)
+    # This matches our MAX_WAIT_SECONDS for runner registration
+    timeout 600 az deployment group create \
         --name "$deployment_name" \
         --resource-group "$RESOURCE_GROUP" \
         --template-file "$BICEP_TEMPLATE" \
@@ -242,7 +245,12 @@ deploy_vm() {
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
         --output none || {
-        echo -e "${RED}❌ VM deployment failed${NC}"
+        local exit_code=$?
+        if [ $exit_code -eq 124 ]; then
+            echo -e "${RED}❌ VM deployment timed out after 10 minutes${NC}"
+        else
+            echo -e "${RED}❌ VM deployment failed (exit code: $exit_code)${NC}"
+        fi
         echo "Check deployment status with: az deployment group show --name $deployment_name --resource-group $RESOURCE_GROUP"
         exit 1
     }
@@ -358,14 +366,19 @@ cleanup_vm() {
     fi
     
     echo ""
-    echo -e "${BLUE}🧹 Cleaning up VM...${NC}"
+    echo -e "${BLUE}🧹 Cleaning up VM resources...${NC}"
     
     if [ -z "$VM_NAME" ]; then
         echo "No VM to clean up"
         return $exit_code
     fi
     
-    # Delete VM (all associated resources have deleteOption: Delete)
+    # Delete VM - this will cascade delete all associated resources:
+    #  - VM itself
+    #  - Network Interface (deleteOption: Delete)
+    #  - OS Disk (deleteOption: Delete via NIC)
+    #  - Public IP (deleteOption: Delete via NIC)
+    # Shared resources (VNet, NSG) are preserved for other test runs
     az vm delete \
         --resource-group "$RESOURCE_GROUP" \
         --name "$VM_NAME" \
@@ -376,6 +389,8 @@ cleanup_vm() {
     }
     
     echo -e "${GREEN}✓${NC} Cleanup initiated for VM: ${VM_NAME}"
+    echo "  Resources deleted: VM, NIC, Public IP, OS Disk"
+    echo "  Shared resources preserved: VNet (iiab-lokole-vnet), NSG (iiab-lokole-runners-nsg)"
     return $exit_code  # Preserve original exit code
 }
 
