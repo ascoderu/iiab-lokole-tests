@@ -37,10 +37,14 @@ upcoming_versions:
     python: '3.14' # Python 3.14.0 released Oct 2025
     release_date: '2026-04-23'
     status: 'pending-release'
+    pre_release_image:  # Available now via daily builds
+      offer: 'ubuntu-26_04-lts-daily'
+      sku: 'server'
     notes: |
       Release: April 23, 2026
       Daily images already available: ubuntu-26_04-lts-daily
       Will be renamed to ubuntu-26_04-lts on release day
+      Use pre_release_image for testing before official release
 
 # Previously Supported Versions
 archived_versions:

@@ -22,7 +22,17 @@ jobs:
       - name: Generate matrix from ubuntu-versions.yml
         id: set-matrix
         run: |
-          MATRIX=$(python3 .github/scripts/generate-matrix.py)
+          # Check if include_upcoming is requested via client_payload
+          INCLUDE_UPCOMING="${{ github.event.client_payload.include_upcoming || 'false' }}"
+          
+          if [ "$INCLUDE_UPCOMING" = "true" ]; then
+            echo "Including upcoming versions (pre-release images)..."
+            MATRIX=$(python3 .github/scripts/generate-matrix.py --include-upcoming)
+          else
+            echo "Using supported versions only..."
+            MATRIX=$(python3 .github/scripts/generate-matrix.py)
+          fi
+          
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "Generated matrix: $MATRIX"
 
