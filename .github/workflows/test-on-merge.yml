@@ -6,6 +6,12 @@ on:
       - lokole-merged
       - iiab-merged
 
+# Prevent concurrent runs to avoid resource conflicts during VM cleanup
+# Queue new runs instead of cancelling in-progress ones
+concurrency:
+  group: test-on-merge
+  cancel-in-progress: false
+
 jobs:
   # Job 0: Generate matrix from ubuntu-versions.yml
   generate-matrix:
