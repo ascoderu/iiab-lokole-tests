@@ -330,10 +330,13 @@ echo "Script started at: $(date)"
 
 # Wait for cloud-init to complete
 echo "Waiting for cloud-init..."
-if cloud-init status --wait; then
-  echo "cloud-init completed successfully"
+cloud-init status --wait
+CLOUD_INIT_EXIT=$?
+
+# Exit codes: 0=success, 1=error, 2=warnings/recoverable errors
+if [ $CLOUD_INIT_EXIT -eq 0 ] || [ $CLOUD_INIT_EXIT -eq 2 ]; then
+  echo "cloud-init completed (exit code: $CLOUD_INIT_EXIT)"
 else
-  CLOUD_INIT_EXIT=$?
   echo "ERROR: cloud-init failed with exit code $CLOUD_INIT_EXIT"
   echo ""
   echo "Cloud-init status:"
