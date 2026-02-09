@@ -93,15 +93,29 @@ jobs:
       - name: Extract merge details
         id: merge_details
         run: |
-          echo "branch=${{ github.event.client_payload.branch }}" >> $GITHUB_OUTPUT
-          echo "sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
-          echo "repo=${{ github.event.client_payload.repo }}" >> $GITHUB_OUTPUT
+          BRANCH="${{ github.event.client_payload.branch }}"
+          SHA="${{ github.event.client_payload.sha }}"
+          REPO="${{ github.event.client_payload.repo }}"
+          
+          echo "branch=${BRANCH:-master}" >> $GITHUB_OUTPUT
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          
+          # If SHA not provided, fetch it from the branch
+          if [ -z "$SHA" ]; then
+            # Ensure repo URL doesn't end up with .git.git
+            REPO_URL="https://github.com/${REPO}"
+            [[ "$REPO_URL" != *.git ]] && REPO_URL="${REPO_URL}.git"
+            SHA=$(git ls-remote "$REPO_URL" "refs/heads/${BRANCH:-master}" | awk '{print $1}')
+            echo "Fetched SHA from ${REPO}/${BRANCH:-master}: $SHA"
+          fi
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
 
       - name: Get dependency master SHAs
         id: deps_sha
         run: |
           # Fetch master branches if not testing them directly
           REPO="${{ steps.merge_details.outputs.repo }}"
+          BRANCH="${{ steps.merge_details.outputs.branch }}"
           
           if [[ "$REPO" == *"iiab"* ]]; then
             # Testing IIAB merge - get Lokole master
