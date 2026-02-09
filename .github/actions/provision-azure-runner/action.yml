@@ -50,7 +50,7 @@ runs:
         GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
         set -euo pipefail  # Exit on any error, preserve pipe exit codes
-        
+
         chmod +x scripts/azure/provision-runner.sh
 
         ARGS="--ubuntu-version ${{ inputs.ubuntu-lts }} \

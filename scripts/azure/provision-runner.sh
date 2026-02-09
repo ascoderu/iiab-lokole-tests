@@ -322,12 +322,12 @@ wait_for_runner() {
             last_status_check=$elapsed
         fi
         
-        # Check if runner is registered
-        local runner_status=$(curl -s \
+        # Check if runner is registered (with timeout to prevent hanging)
+        local runner_status=$(curl -s --max-time 5 --connect-timeout 3 \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/ascoderu/iiab-lokole-tests/actions/runners" \
-            | jq -r ".runners[] | select(.name == \"$VM_NAME\") | .status")
+            | jq -r ".runners[] | select(.name == \"$VM_NAME\") | .status" 2>/dev/null || echo "")
         
         if [ "$runner_status" = "online" ]; then
             echo -e "${GREEN}✓${NC} Runner registered and online!"
