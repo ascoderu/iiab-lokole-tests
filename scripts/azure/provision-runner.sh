@@ -244,7 +244,7 @@ deploy_vm() {
             runnerLabels="$runner_labels" \
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
-        --output none || {
+        --verbose || {
         local exit_code=$?
         if [ $exit_code -eq 124 ]; then
             echo -e "${RED}❌ VM deployment timed out after 10 minutes${NC}"
