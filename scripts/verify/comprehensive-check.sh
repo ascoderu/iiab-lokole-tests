@@ -174,13 +174,37 @@ check_all_services() {
 # Check socket permissions
 check_socket() {
     local socket_path="/home/lokole/state/lokole_gunicorn.sock"
-    local exists=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "[ -S $socket_path ] && echo true || echo false" 2>/dev/null || echo "false")
+    
+    # Use vm_exec helper to handle both direct and multipass modes
+    if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+        # Direct mode - check locally
+        local exists=$([ -S "$socket_path" ] && echo true || echo false)
+    else
+        # Multipass mode
+        local exists=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "[ -S $socket_path ] && echo true || echo false" 2>/dev/null || echo "false")
+    fi
     
     if [ "$exists" = "true" ]; then
-        local owner=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%U' "$socket_path" 2>/dev/null || echo "")
-        local group=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%G' "$socket_path" 2>/dev/null || echo "")
-        local perms=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%a' "$socket_path" 2>/dev/null || echo "")
-        local www_data_check=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "getent group lokole | grep -q www-data && echo true || echo false" 2>/dev/null || echo "false")
+        if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+            # Direct mode - stat locally
+            local owner=$(sudo stat -c '%U' "$socket_path" 2>/dev/null || echo "")
+            local group=$(sudo stat -c '%G' "$socket_path" 2>/dev/null || echo "")
+            local perms=$(sudo stat -c '%a' "$socket_path" 2>/dev/null || echo "")
+        else
+            # Multipass mode
+            local owner=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%U' "$socket_path" 2>/dev/null || echo "")
+            local group=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%G' "$socket_path" 2>/dev/null || echo "")
+            local perms=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%a' "$socket_path" 2>/dev/null || echo "")
+        fi
+        
+        # Check if www-data is in lokole group
+        if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+            # Direct mode - check locally
+            local www_data_check=$(sudo bash -c "getent group lokole | grep -q www-data && echo true || echo false" 2>/dev/null || echo "false")
+        else
+            # Multipass mode
+            local www_data_check=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "getent group lokole | grep -q www-data && echo true || echo false" 2>/dev/null || echo "false")
+        fi
         
         # Ensure www_data_check is a valid boolean
         [[ "$www_data_check" != "true" && "$www_data_check" != "false" ]] && www_data_check="false"
