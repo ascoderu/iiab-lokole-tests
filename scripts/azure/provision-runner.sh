@@ -250,7 +250,7 @@ deploy_vm() {
     
     echo "Polling deployment status..."
     local start_time=$(date +%s)
-    local max_wait=600  # 10 minutes
+    local max_wait=900  # 15 minutes (matches job timeout)
     
     while true; do
         local elapsed=$(($(date +%s) - start_time))
