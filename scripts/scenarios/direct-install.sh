@@ -114,6 +114,24 @@ if [[ "$PR_REPO" == iiab/iiab* ]] && [ -n "$PR_NUMBER" ]; then
     sudo git checkout pr-${PR_NUMBER}
     echo "Checked out PR branch: $(git branch --show-current)"
     echo "Latest commit: $(git log -1 --oneline)"
+elif [[ "$PR_REPO" == iiab/iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
+    echo "Using IIAB branch/ref: ${PR_REF} (from ${PR_REPO})"
+    if [ -n "$PR_SHA" ]; then
+        echo "Target commit: ${PR_SHA}"
+    fi
+    # Clone and checkout the specific ref
+    sudo git clone https://github.com/iiab/iiab.git /opt/iiab/iiab
+    cd /opt/iiab/iiab
+    sudo git fetch origin "${PR_REF}"
+    if [ -n "$PR_SHA" ]; then
+        # If we have a specific SHA, checkout that
+        sudo git checkout "${PR_SHA}"
+    else
+        # Otherwise checkout the branch
+        sudo git checkout "${PR_REF}"
+    fi
+    echo "Checked out ref: $(git describe --always --all)"
+    echo "Latest commit: $(git log -1 --oneline)"
 elif [ -n "$IIAB_PR" ]; then
     # Legacy support for --iiab-pr parameter
     echo "Using IIAB PR #${IIAB_PR}"

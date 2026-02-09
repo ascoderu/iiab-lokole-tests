@@ -119,7 +119,7 @@ jobs:
             ./scripts/scenarios/direct-install.sh \
               --pr-repo "${{ steps.merge_details.outputs.repo }}" \
               --pr-sha "${{ steps.merge_details.outputs.sha }}" \
-              --iiab-branch "${{ steps.merge_details.outputs.branch }}"
+              --pr-ref "${{ steps.merge_details.outputs.branch }}"
           fi
 
       - name: Upload test results
