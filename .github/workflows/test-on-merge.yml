@@ -134,6 +134,7 @@ jobs:
           chmod +x scripts/scenarios/*.sh
           chmod +x scripts/azure/*.sh
           chmod +x scripts/verify/*.sh
+          chmod +x scripts/reports/*.sh
 
       - name: Run direct IIAB installation with merged version
         id: test
@@ -156,16 +157,24 @@ jobs:
               --lokole-repo "ascoderu/lokole"
           fi
 
+      - name: Generate PR comment body
+        if: always()
+        run: |
+          ./scripts/reports/generate-pr-comment.sh \
+            "pr-comment-ubuntu-${{ matrix.ubuntu_version }}.md" \
+            lokole-verification.json \
+            "${{ steps.merge_details.outputs.repo }}" \
+            "${{ steps.merge_details.outputs.branch }}"
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: post-merge-results-ubuntu-${{ matrix.ubuntu_version }}
+          name: test-results-ubuntu-${{ matrix.ubuntu_version }}
           path: |
-            *.txt
-            *.json
-            *.md
-            *.log
+            lokole-verification.json
+            pr-comment-ubuntu-${{ matrix.ubuntu_version }}.md
+          if-no-files-found: warn
 
       - name: Create issue on failure
         if: failure()
@@ -213,9 +222,41 @@ jobs:
               labels: ['bug', 'automated-test-failure', 'post-merge']
             });
 
-  # Job 3: Cleanup Azure VM and runner (always runs)
+  # Job 3: Aggregate test results and generate matrix report
+  aggregate-results:
+    needs: [test-merged-version]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-artifacts
+
+      - name: Generate matrix test report
+        run: |
+          mkdir -p reports
+          ./scripts/reports/generate-matrix-report.sh \
+            reports/matrix-test-report.md \
+            test-artifacts
+          
+          echo "📊 Matrix Test Report Generated"
+          cat reports/matrix-test-report.md
+
+      - name: Upload matrix report
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-test-report
+          path: reports/matrix-test-report.md
+          retention-days: 30
+
+  # Job 4: Cleanup Azure VM and runner (always runs)
   cleanup-runner:
-    needs: [provision-runner, test-merged-version]
+    needs: [provision-runner, test-merged-version, aggregate-results]
     if: always()
     runs-on: ubuntu-latest
 
