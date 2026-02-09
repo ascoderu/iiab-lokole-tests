@@ -46,7 +46,7 @@ jobs:
   provision-runner:
     needs: generate-matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # Max time for VM provisioning (script timeout is 10 min)
+    timeout-minutes: 15 # Max time for VM provisioning (deployment can take 9+ min in CI)
     strategy:
       fail-fast: false # Test all versions even if one fails
       max-parallel: 2 # Parallel provisioning (10 vCPU quota allows 5× Standard_B2s)
