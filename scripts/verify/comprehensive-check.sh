@@ -39,12 +39,10 @@ init_json() {
         "python_major_minor": ""
     },
     "services": {},
-    "socket": {
-        "exists": false,
-        "owner": "",
-        "group": "",
-        "permissions": "",
-        "www_data_in_group": false
+    "port": {
+        "listening": false,
+        "port_number": 8084,
+        "process": ""
     },
     "web_access": {
         "http_code": "",
@@ -59,7 +57,7 @@ init_json() {
     "logs": {
         "nginx_errors": 0,
         "nginx_permission_errors": 0,
-        "supervisor_errors": 0,
+        "systemd_errors": 0,
         "lokole_exceptions": 0
     },
     "checks": {
@@ -128,26 +126,30 @@ check_service() {
     
     # Check if running in direct mode
     if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
-        status=$(timeout 10 sudo supervisorctl status "$service_name" 2>/dev/null || echo "")
+        status=$(timeout 10 sudo systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
     else
-        status=$(timeout 10 multipass exec "$VM_NAME" -- sudo supervisorctl status "$service_name" 2>/dev/null || echo "")
+        status=$(timeout 10 multipass exec "$VM_NAME" -- sudo systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
     fi
     
     local state="unknown"
     local pid=""
     local uptime=""
     
-    if echo "$status" | grep -q "RUNNING"; then
+    if [[ "$status" == "active" ]]; then
         state="running"
-        pid=$(echo "$status" | grep -oP 'pid \K[0-9]+' || echo "")
-        uptime=$(echo "$status" | grep -oP 'uptime \K[^,]+' || echo "")
-    elif echo "$status" | grep -q "STOPPED"; then
+        # Get PID from systemctl show
+        if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+            pid=$(sudo systemctl show -p MainPID "$service_name" 2>/dev/null | cut -d= -f2)
+        else
+            pid=$(multipass exec "$VM_NAME" -- sudo systemctl show -p MainPID "$service_name" 2>/dev/null | cut -d= -f2)
+        fi
+    elif [[ "$status" == "inactive" ]]; then
         state="stopped"
-    elif echo "$status" | grep -q "FATAL"; then
+    elif [[ "$status" == "failed" ]]; then
         state="fatal"
-    elif echo "$status" | grep -q "no such process"; then
+    elif [[ "$status" == "unknown" ]] || [[ -z "$status" ]]; then
         state="not_found"
-    elif echo "$status" | grep -q "ERROR"; then
+    else
         state="error"
     fi
     
@@ -165,65 +167,40 @@ check_service() {
 
 # Check all Lokole services
 check_all_services() {
-    local services=("lokole_gunicorn" "lokole_celery_beat" "lokole_celery_worker" "lokole_restarter")
+    local services=("lokole-gunicorn.service" "lokole-celery-beat.service" "lokole-celery-worker.service" "lokole-restarter.service")
     for service in "${services[@]}"; do
         check_service "$service"
     done
 }
 
-# Check socket permissions
-check_socket() {
-    local socket_path="/home/lokole/state/lokole_gunicorn.sock"
+# Check port listening (TCP port 8084)
+check_port() {
+    local port=8084
+    local listening="false"
+    local process=""
     
-    # Use vm_exec helper to handle both direct and multipass modes
+    # Check if port is listening
     if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
-        # Direct mode - check locally with sudo (socket owned by lokole user)
-        local exists=$(sudo bash -c "[ -S $socket_path ] && echo true || echo false" 2>/dev/null || echo "false")
+        # Direct mode
+        local port_check=$(sudo ss -tlnp 2>/dev/null | grep ":$port" || echo "")
     else
         # Multipass mode
-        local exists=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "[ -S $socket_path ] && echo true || echo false" 2>/dev/null || echo "false")
+        local port_check=$(timeout 10 multipass exec "$VM_NAME" -- sudo ss -tlnp 2>/dev/null | grep ":$port" || echo "")
     fi
     
-    if [ "$exists" = "true" ]; then
-        if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
-            # Direct mode - stat locally
-            local owner=$(sudo stat -c '%U' "$socket_path" 2>/dev/null || echo "")
-            local group=$(sudo stat -c '%G' "$socket_path" 2>/dev/null || echo "")
-            local perms=$(sudo stat -c '%a' "$socket_path" 2>/dev/null || echo "")
-        else
-            # Multipass mode
-            local owner=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%U' "$socket_path" 2>/dev/null || echo "")
-            local group=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%G' "$socket_path" 2>/dev/null || echo "")
-            local perms=$(timeout 10 multipass exec "$VM_NAME" -- sudo stat -c '%a' "$socket_path" 2>/dev/null || echo "")
-        fi
-        
-        # Check if www-data is in lokole group
-        if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
-            # Direct mode - check locally
-            local www_data_check=$(sudo bash -c "getent group lokole | grep -q www-data && echo true || echo false" 2>/dev/null || echo "false")
-        else
-            # Multipass mode
-            local www_data_check=$(timeout 10 multipass exec "$VM_NAME" -- sudo bash -c "getent group lokole | grep -q www-data && echo true || echo false" 2>/dev/null || echo "false")
-        fi
-        
-        # Ensure www_data_check is a valid boolean
-        [[ "$www_data_check" != "true" && "$www_data_check" != "false" ]] && www_data_check="false"
-        
-        jq --argjson exists true \
-           --arg owner "$owner" \
-           --arg group "$group" \
-           --arg perms "$perms" \
-           --argjson www_data "$www_data_check" \
-           '.socket.exists = $exists |
-            .socket.owner = $owner |
-            .socket.group = $group |
-            .socket.permissions = $perms |
-            .socket.www_data_in_group = $www_data' \
-           "$OUTPUT_FILE" > "$OUTPUT_FILE.tmp" && mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
-    else
-        jq '.socket.exists = false' \
-           "$OUTPUT_FILE" > "$OUTPUT_FILE.tmp" && mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
+    if [[ -n "$port_check" ]]; then
+        listening="true"
+        # Extract process name from ss output
+        process=$(echo "$port_check" | grep -oP 'users:\(\("\K[^"]+' | head -1 || echo "unknown")
     fi
+    
+    jq --argjson listening "$listening" \
+       --argjson port "$port" \
+       --arg process "$process" \
+       '.port.listening = $listening |
+        .port.port_number = $port |
+        .port.process = $process' \
+       "$OUTPUT_FILE" > "$OUTPUT_FILE.tmp" && mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
 }
 
 # Check web access
@@ -258,34 +235,42 @@ check_web_access() {
 analyze_logs() {
     local nginx_errors=$(vm_exec "grep -c 'error' /var/log/nginx/error.log 2>/dev/null || echo 0")
     local nginx_perm_errors=$(vm_exec "grep -c 'Permission denied' /var/log/nginx/error.log 2>/dev/null || echo 0")
-    local supervisor_errors=$(vm_exec "grep -c 'ERROR' /var/log/supervisor/supervisord.log 2>/dev/null || echo 0")
+    
+    # Check systemd journal for lokole service errors (last 24 hours)
+    local systemd_errors=0
+    if [[ "$VM_NAME" == "direct-install" ]] || [[ "$VM_NAME" == "localhost" ]]; then
+        systemd_errors=$(sudo journalctl -u 'lokole-*' --since '24 hours ago' --priority err 2>/dev/null | grep -c 'Failed\|ERROR\|error' || echo 0)
+    else
+        systemd_errors=$(timeout 10 multipass exec "$VM_NAME" -- sudo journalctl -u 'lokole-*' --since '24 hours ago' --priority err 2>/dev/null | grep -c 'Failed\|ERROR\|error' || echo 0)
+    fi
+    
     local lokole_exceptions=$(vm_exec "grep -c 'Exception' /var/log/lokole/*.log 2>/dev/null || echo 0")
     
     # Ensure all values are numbers (defaulting to 0 if empty or invalid)
     nginx_errors=${nginx_errors:-0}
     nginx_perm_errors=${nginx_perm_errors:-0}
-    supervisor_errors=${supervisor_errors:-0}
+    systemd_errors=${systemd_errors:-0}
     lokole_exceptions=${lokole_exceptions:-0}
     
     # Strip any whitespace
     nginx_errors=$(echo "$nginx_errors" | tr -d '[:space:]')
     nginx_perm_errors=$(echo "$nginx_perm_errors" | tr -d '[:space:]')
-    supervisor_errors=$(echo "$supervisor_errors" | tr -d '[:space:]')
+    systemd_errors=$(echo "$systemd_errors" | tr -d '[:space:]')
     lokole_exceptions=$(echo "$lokole_exceptions" | tr -d '[:space:]')
     
     # Validate they're numbers
     [[ ! "$nginx_errors" =~ ^[0-9]+$ ]] && nginx_errors=0
     [[ ! "$nginx_perm_errors" =~ ^[0-9]+$ ]] && nginx_perm_errors=0
-    [[ ! "$supervisor_errors" =~ ^[0-9]+$ ]] && supervisor_errors=0
+    [[ ! "$systemd_errors" =~ ^[0-9]+$ ]] && systemd_errors=0
     [[ ! "$lokole_exceptions" =~ ^[0-9]+$ ]] && lokole_exceptions=0
     
     jq --argjson nginx "$nginx_errors" \
        --argjson nginx_perm "$nginx_perm_errors" \
-       --argjson supervisor "$supervisor_errors" \
+       --argjson systemd "$systemd_errors" \
        --argjson lokole "$lokole_exceptions" \
        '.logs.nginx_errors = $nginx |
         .logs.nginx_permission_errors = $nginx_perm |
-        .logs.supervisor_errors = $supervisor |
+        .logs.systemd_errors = $systemd |
         .logs.lokole_exceptions = $lokole' \
        "$OUTPUT_FILE" > "$OUTPUT_FILE.tmp" && mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
 }
@@ -326,7 +311,7 @@ calculate_checks() {
     fi
     
     # Service checks (4 services)
-    local services=(lokole_gunicorn lokole_celery_beat lokole_celery_worker lokole_restarter)
+    local services=("lokole-gunicorn.service" "lokole-celery-beat.service" "lokole-celery-worker.service" "lokole-restarter.service")
     for service in "${services[@]}"; do
         total=$((total + 1))
         local state=$(jq -r ".services[\"$service\"].status" "$OUTPUT_FILE")
@@ -339,22 +324,11 @@ calculate_checks() {
         fi
     done
     
-    # Socket check
+    # Port check (TCP port 8084)
     total=$((total + 1))
-    local socket_exists=$(jq -r '.socket.exists' "$OUTPUT_FILE")
-    if [ "$socket_exists" = "true" ]; then
+    local port_listening=$(jq -r '.port.listening' "$OUTPUT_FILE")
+    if [ "$port_listening" = "true" ]; then
         passed=$((passed + 1))
-    else
-        failed=$((failed + 1))
-    fi
-    
-    # Socket permissions check
-    total=$((total + 1))
-    local www_data_ok=$(jq -r '.socket.www_data_in_group' "$OUTPUT_FILE")
-    if [ "$www_data_ok" = "true" ]; then
-        passed=$((passed + 1))
-    elif [ "$socket_exists" = "true" ]; then
-        warnings=$((warnings + 1))
     else
         failed=$((failed + 1))
     fi
@@ -445,7 +419,7 @@ main() {
     
     print_header "SERVICE STATUS"
     check_all_services
-    for service in lokole_gunicorn lokole_celery_beat lokole_celery_worker lokole_restarter; do
+    for service in "lokole-gunicorn.service" "lokole-celery-beat.service" "lokole-celery-worker.service" "lokole-restarter.service"; do
         local state=$(jq -r ".services[\"$service\"].status" "$OUTPUT_FILE")
         case "$state" in
             running)
@@ -454,28 +428,20 @@ main() {
                 ;;
             stopped) print_warn "$service is stopped" ;;
             fatal) print_fail "$service has fatal error" ;;
-            not_found) print_fail "$service not found in supervisor" ;;
+            not_found) print_fail "$service not found in systemd" ;;
             *) print_warn "$service status unknown: $state" ;;
         esac
     done
     
-    print_header "SOCKET PERMISSIONS"
-    check_socket
-    local socket_exists=$(jq -r '.socket.exists' "$OUTPUT_FILE")
-    if [ "$socket_exists" = "true" ]; then
-        print_pass "Gunicorn socket exists"
-        local owner=$(jq -r '.socket.owner' "$OUTPUT_FILE")
-        local group=$(jq -r '.socket.group' "$OUTPUT_FILE")
-        local perms=$(jq -r '.socket.permissions' "$OUTPUT_FILE")
-        print_info "Owner: $owner, Group: $group, Perms: $perms"
-        local www_data_check=$(jq -r '.socket.www_data_in_group' "$OUTPUT_FILE")
-        if [ "$www_data_check" = "true" ]; then
-            print_pass "www-data is in $group group (PR #4259 fix working)"
-        else
-            print_fail "www-data is NOT in $group group"
-        fi
+    print_header "PORT CHECK"
+    check_port
+    local port_listening=$(jq -r '.port.listening' "$OUTPUT_FILE")
+    if [ "$port_listening" = "true" ]; then
+        local port_number=$(jq -r '.port.port_number' "$OUTPUT_FILE")
+        local process=$(jq -r '.port.process' "$OUTPUT_FILE")
+        print_pass "Gunicorn listening on port $port_number (process: $process)"
     else
-        print_fail "Gunicorn socket not found at /home/lokole/state/lokole_gunicorn.sock"
+        print_fail "Gunicorn not listening on TCP port 8084"
     fi
     
     print_header "WEB ACCESS TEST"
@@ -494,9 +460,9 @@ main() {
     analyze_logs
     local nginx_errors=$(jq -r '.logs.nginx_errors' "$OUTPUT_FILE")
     local nginx_perm=$(jq -r '.logs.nginx_permission_errors' "$OUTPUT_FILE")
-    local supervisor_errors=$(jq -r '.logs.supervisor_errors' "$OUTPUT_FILE")
+    local systemd_errors=$(jq -r '.logs.systemd_errors' "$OUTPUT_FILE")
     print_info "Nginx errors: $nginx_errors (permission: $nginx_perm)"
-    print_info "Supervisor errors: $supervisor_errors"
+    print_info "Systemd errors: $systemd_errors"
     if [ "$nginx_perm" -eq 0 ]; then
         print_pass "No nginx permission errors"
     else

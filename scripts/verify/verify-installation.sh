@@ -60,12 +60,12 @@ else
 fi
 echo ""
 
-echo "3. Checking gunicorn socket:"
-if [ -S /home/lokole/state/lokole_gunicorn.sock ]; then
-    ls -la /home/lokole/state/lokole_gunicorn.sock
-    echo "✅ Gunicorn socket exists"
+echo "3. Checking gunicorn TCP port:"
+if ss -tlnp 2>/dev/null | grep -q ":8084"; then
+    echo "✅ Gunicorn listening on TCP port 8084"
+    ss -tlnp 2>/dev/null | grep ":8084"
 else
-    echo "⚠️  Gunicorn socket not found (may be created after first run)"
+    echo "⚠️  Gunicorn not listening on port 8084 (service may not be started)"
 fi
 echo ""
 '
@@ -85,11 +85,11 @@ fi
 echo ""
 '
 
-echo "📈 Checking Lokole supervisor services..."
+echo "📈 Checking Lokole systemd services..."
 multipass exec ${VM_NAME} -- bash -c '
 echo "=== LOKOLE SERVICES STATUS ==="
-echo "Supervisor services:"
-sudo supervisorctl status | grep lokole || echo "No lokole services found in supervisor"
+echo "Systemd services:"
+sudo systemctl status lokole-gunicorn.service lokole-celery-beat.service lokole-celery-worker.service lokole-restarter.service --no-pager | grep -E "(Loaded|Active|Main PID)" || echo "No lokole services found in systemd"
 echo ""
 '
 
@@ -154,7 +154,7 @@ else
     echo "  ❌ Python environment not found"
 fi
 
-SERVICES=$(sudo supervisorctl status | grep lokole | grep RUNNING | wc -l)
+SERVICES=$(sudo systemctl is-active lokole-gunicorn.service lokole-celery-beat.service lokole-celery-worker.service lokole-restarter.service 2>/dev/null | grep -c "^active$")
 echo "  📊 Lokole services running: $SERVICES/4 expected"
 
 echo ""

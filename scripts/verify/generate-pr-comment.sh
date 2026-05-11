@@ -263,7 +263,7 @@ EOF
     
     if [ "$FAILED" -gt 0 ]; then
         cat >> "$OUTPUT_FILE" << EOF
-1. **Check service status**: \`multipass exec ${VM_NAME} -- supervisorctl status\`
+1. **Check service status**: `multipass exec ${VM_NAME} -- systemctl status lokole-gunicorn.service lokole-celery-beat.service lokole-celery-worker.service lokole-restarter.service --no-pager`
 2. **Review IIAB logs**: \`multipass exec ${VM_NAME} -- sudo journalctl -u iiab-*\`
 3. **Verify Lokole installation**: \`multipass exec ${VM_NAME} -- pip3 list | grep opwen\`
 4. **Check NGINX configuration**: \`multipass exec ${VM_NAME} -- sudo nginx -t\`

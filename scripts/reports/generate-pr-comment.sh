@@ -33,16 +33,15 @@ failed_checks=$(jq -r '.checks.failed // 0' "$VERIFICATION_JSON")
 warnings=$(jq -r '.checks.warnings // 0' "$VERIFICATION_JSON")
 
 # Service status
-gunicorn_status=$(jq -r '.services.lokole_gunicorn.status // "unknown"' "$VERIFICATION_JSON")
-gunicorn_pid=$(jq -r '.services.lokole_gunicorn.pid // "N/A"' "$VERIFICATION_JSON")
-celery_beat_status=$(jq -r '.services.lokole_celery_beat.status // "unknown"' "$VERIFICATION_JSON")
-celery_worker_status=$(jq -r '.services.lokole_celery_worker.status // "unknown"' "$VERIFICATION_JSON")
+gunicorn_status=$(jq -r '.services["lokole-gunicorn.service"].status // "unknown"' "$VERIFICATION_JSON")
+gunicorn_pid=$(jq -r '.services["lokole-gunicorn.service"].pid // "N/A"' "$VERIFICATION_JSON")
+celery_beat_status=$(jq -r '.services["lokole-celery-beat.service"].status // "unknown"' "$VERIFICATION_JSON")
+celery_worker_status=$(jq -r '.services["lokole-celery-worker.service"].status // "unknown"' "$VERIFICATION_JSON")
 
-# Socket info
-socket_exists=$(jq -r '.socket.exists // false' "$VERIFICATION_JSON")
-socket_owner=$(jq -r '.socket.owner // "unknown"' "$VERIFICATION_JSON")
-socket_group=$(jq -r '.socket.group // "unknown"' "$VERIFICATION_JSON")
-www_data_in_group=$(jq -r '.socket.www_data_in_group // false' "$VERIFICATION_JSON")
+# Port info
+port_listening=$(jq -r '.port.listening // false' "$VERIFICATION_JSON")
+port_number=$(jq -r '.port.port_number // "8084"' "$VERIFICATION_JSON")
+port_process=$(jq -r '.port.process // "unknown"' "$VERIFICATION_JSON")
 
 # Web access
 http_code=$(jq -r '.web_access.http_code // "N/A"' "$VERIFICATION_JSON")
@@ -74,11 +73,10 @@ cat > "$OUTPUT_FILE" << EOF
 | Celery Beat | ✅ $celery_beat_status | Scheduler |
 | Celery Worker | ✅ $celery_worker_status | Task processor |
 
-### Socket Configuration
-- **Exists:** $([ "$socket_exists" = "true" ] && echo "✅ Yes" || echo "❌ No")
-- **Owner:** \`$socket_owner\`
-- **Group:** \`$socket_group\`
-- **www-data in group:** $([ "$www_data_in_group" = "true" ] && echo "✅ Yes" || echo "❌ No")
+### Network Configuration
+- **Port Listening:** $([ "$port_listening" = "true" ] && echo "✅ Yes" || echo "❌ No")
+- **Port Number:** `$port_number`
+- **Process:** `$port_process`
 
 ### Web Access Verification
 - **HTTP Response:** \`$http_code\`

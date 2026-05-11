@@ -18,7 +18,7 @@ cat > "$REPORT_FILE" << 'EOF'
 EOF
 
 # Collect all verification.json files and generate matrix
-echo "| Ubuntu Version | Python | Status | Socket | HTTP | Response Time | Kernel |" >> "$REPORT_FILE"
+echo "| Ubuntu Version | Python | Status | Port | HTTP | Response Time | Kernel |" >> "$REPORT_FILE"
 echo "|---|---|---|---|---|---|---|" >> "$REPORT_FILE"
 
 # Find and process all verification.json files
@@ -28,7 +28,7 @@ for json_file in $(find "$RESULTS_DIR" -name "lokole-verification.json" | sort);
     os_version=$(jq -r '.system.os_version // "unknown"' "$json_file")
     python_version=$(jq -r '.system.python_version // "unknown"' "$json_file")
     summary=$(jq -r '.summary // "unknown"' "$json_file")
-    socket_exists=$(jq -r '.socket.exists // false' "$json_file")
+    port_listening=$(jq -r '.port.listening // false' "$json_file")
     http_code=$(jq -r '.web_access.http_code // "N/A"' "$json_file")
     response_time=$(jq -r '.web_access.response_time_ms // "N/A"' "$json_file")
     kernel=$(jq -r '.system.kernel // "unknown"' "$json_file")
@@ -40,11 +40,11 @@ for json_file in $(find "$RESULTS_DIR" -name "lokole-verification.json" | sort);
       status="❌ FAILED"
     fi
     
-    # Format socket
-    if [ "$socket_exists" = "true" ]; then
-      socket="✅"
+    # Format port
+    if [ "$port_listening" = "true" ]; then
+      port="✅"
     else
-      socket="❌"
+      port="❌"
     fi
     
     # Format HTTP
@@ -54,7 +54,7 @@ for json_file in $(find "$RESULTS_DIR" -name "lokole-verification.json" | sort);
       http_check="❌"
     fi
     
-    echo "| **Ubuntu $os_version** | $python_version | $status | $socket | $http_check ($http_code) | ${response_time}ms | $kernel |" >> "$REPORT_FILE"
+    echo "| **Ubuntu $os_version** | $python_version | $status | $port | $http_check ($http_code) | ${response_time}ms | $kernel |" >> "$REPORT_FILE"
   fi
 done
 
@@ -69,13 +69,13 @@ cat >> "$REPORT_FILE" << 'EOF'
 - ✅ Lokole Restarter (auto-restart)
 
 ### Verification Checks
-- ✅ Socket file existence and permissions
+- ✅ TCP port listening (8084)
 - ✅ Web access via nginx reverse proxy
 - ✅ Python environment correctness
 - ✅ System log validation
 
 ### Legend
-- **Socket**: Unix domain socket accessibility
+- **Port**: TCP port 8084 accessibility
 - **HTTP**: Web service response code
 - **Response Time**: Latency in milliseconds
 
