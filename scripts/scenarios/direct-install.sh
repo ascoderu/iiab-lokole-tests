@@ -105,16 +105,8 @@ echo ""
 echo "  Step 2: Cloning IIAB repository..."
 
 # Determine if this is an IIAB PR by checking PR_REPO
-if [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_NUMBER" ]; then
-    echo "Using IIAB PR #${PR_NUMBER} (from ${PR_REPO})"
-    # Clone and fetch PR (supports forks)
-    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
-    cd /opt/iiab/iiab
-    sudo git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
-    sudo git checkout pr-${PR_NUMBER}
-    echo "Checked out PR branch: $(git branch --show-current)"
-    echo "Latest commit: $(git log -1 --oneline)"
-elif [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
+# Priority: PR_REF (works for forks + upstream) > PR_NUMBER (upstream only)
+if [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
     echo "Using IIAB branch/ref: ${PR_REF} (from ${PR_REPO})"
     if [ -n "$PR_SHA" ]; then
         echo "Target commit: ${PR_SHA}"
@@ -128,6 +120,15 @@ elif [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]
         sudo git checkout "${PR_SHA}"
     fi
     echo "Checked out ref: $(git describe --always --all)"
+    echo "Latest commit: $(git log -1 --oneline)"
+elif [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_NUMBER" ]; then
+    echo "Using IIAB PR #${PR_NUMBER} (from ${PR_REPO})"
+    # Clone and fetch PR (only works for upstream, not forks)
+    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
+    cd /opt/iiab/iiab
+    sudo git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
+    sudo git checkout pr-${PR_NUMBER}
+    echo "Checked out PR branch: $(git branch --show-current)"
     echo "Latest commit: $(git log -1 --oneline)"
 elif [ -n "$IIAB_PR" ]; then
     # Legacy support for --iiab-pr parameter
