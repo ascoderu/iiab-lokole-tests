@@ -7,7 +7,7 @@
 set -e
 
 OUTPUT_FILE="${1:-pr-comment.md}"
-VERIFICATION_JSON="${2:-lokole-verification.json}"
+VERIFICATION_JSON="${2:-comprehensive-check-results.json}"
 PR_REPO="${3:-unknown}"
 PR_REF="${4:-master}"
 

@@ -22,7 +22,7 @@ echo "| Ubuntu Version | Python | Status | Port | HTTP | Response Time | Kernel 
 echo "|---|---|---|---|---|---|---|" >> "$REPORT_FILE"
 
 # Find and process all verification.json files
-for json_file in $(find "$RESULTS_DIR" -name "lokole-verification.json" | sort); do
+for json_file in $(find "$RESULTS_DIR" -name "comprehensive-check-results.json" | sort); do
   if [ -f "$json_file" ]; then
     # Extract data from JSON
     os_version=$(jq -r '.system.os_version // "unknown"' "$json_file")
