@@ -133,50 +133,94 @@ jobs:
             *.md
             *.log
 
-      - name: Post results as comment
-        if: always()
+  # Job 3: Post success comment to upstream PR (only if all tests pass)
+  post-success-comment:
+    needs: [generate-matrix, test-on-azure-runners]
+    if: success()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pr-${{ github.event.client_payload.pr_number }}-ubuntu-*-results
+          path: test-results
+
+      - name: Generate consolidated success comment
+        id: comment
+        run: |
+          PR_NUMBER="${{ github.event.client_payload.pr_number }}"
+          PR_REPO="${{ github.event.client_payload.repo }}"
+          PR_REF="${{ github.event.client_payload.ref }}"
+          
+          # Determine upstream repo (for IIAB PRs, always post to iiab/iiab)
+          if [[ "$PR_REPO" == *"iiab"* ]]; then
+            UPSTREAM_OWNER="iiab"
+            UPSTREAM_REPO="iiab"
+          else
+            # For Lokole PRs, post to ascoderu/lokole
+            UPSTREAM_OWNER="ascoderu"
+            UPSTREAM_REPO="lokole"
+          fi
+          
+          echo "upstream_owner=$UPSTREAM_OWNER" >> $GITHUB_OUTPUT
+          echo "upstream_repo=$UPSTREAM_REPO" >> $GITHUB_OUTPUT
+          
+          # Build comment body
+          cat > comment.md << 'EOF'
+          ## ✅ Integration Tests Passed
+          
+          All IIAB integration tests completed successfully across multiple Ubuntu versions.
+          
+          **Tested Configuration:**
+          - **PR:** #${{ github.event.client_payload.pr_number }}
+          - **Branch:** `${{ github.event.client_payload.ref }}`
+          - **Commit:** `${{ github.event.client_payload.sha }}`
+          
+          **Test Results:**
+          EOF
+          
+          # Add results for each Ubuntu version
+          for result_dir in test-results/pr-${PR_NUMBER}-ubuntu-*-results; do
+            if [ -d "$result_dir" ]; then
+              version=$(basename "$result_dir" | sed 's/pr-.*-ubuntu-\(.*\)-results/\1/')
+              
+              # Check if lokole services are verified
+              if [ -f "$result_dir/comprehensive-check-results.json" ]; then
+                echo "- ✅ Ubuntu $version" >> comment.md
+              else
+                echo "- ⚠️ Ubuntu $version (completed but verification incomplete)" >> comment.md
+              fi
+            fi
+          done
+          
+          cat >> comment.md << 'EOF'
+          
+          **Test Workflow:** https://github.com/ascoderu/iiab-lokole-tests/actions/runs/${{ github.run_id }}
+          
+          ---
+          *Automated integration tests powered by [iiab-lokole-tests](https://github.com/ascoderu/iiab-lokole-tests)*
+          EOF
+
+      - name: Post comment to upstream PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.INTEGRATION_TEST_PAT }}
           script: |
             const fs = require('fs');
-            const payload = context.payload.client_payload;
-            const [owner, repo] = payload.repo.split('/');
-
-            // Read markdown comment
-            const mdFiles = fs.readdirSync('.').filter(f => f.includes('pr-comment') && f.endsWith('.md'));
-            let reportContent = '';
-
-            if (mdFiles.length > 0) {
-              reportContent = fs.readFileSync(mdFiles[0], 'utf8');
-              // Add matrix info header
-              const optionalBadge = ${{ matrix.continue_on_error || false }} ? ' 🟡 (Optional)' : '';
-              reportContent = `## Test Result for Ubuntu ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})${optionalBadge}\n\n` + reportContent;
-            } else {
-              // Fallback to basic report
-              const optionalBadge = ${{ matrix.continue_on_error || false }} ? ' 🟡 (Optional)' : '';
-              reportContent = `## Integration Test Results${optionalBadge}\n\n`;
-              reportContent += '**Ubuntu:** ${{ matrix.ubuntu_version }}\n';
-              reportContent += '**Expected Python:** ${{ matrix.python_expected }}\n';
-              reportContent += '**Status:** ' + (${{ matrix.continue_on_error || false }} ? 'Optional (failures allowed)' : 'Required') + '\n\n';
-              
-              const reportFiles = fs.readdirSync('.').filter(f => f.endsWith('.txt'));
-              if (reportFiles.length > 0) {
-                const content = fs.readFileSync(reportFiles[0], 'utf8');
-                reportContent += '```\n' + content + '\n```';
-              } else {
-                reportContent += '⚠️ No test report generated';
-              }
-            }
-
+            const commentBody = fs.readFileSync('comment.md', 'utf8');
+            
             await github.rest.issues.createComment({
-              owner: owner,
-              repo: repo,
-              issue_number: payload.pr_number,
-              body: reportContent
+              owner: '${{ steps.comment.outputs.upstream_owner }}',
+              repo: '${{ steps.comment.outputs.upstream_repo }}',
+              issue_number: ${{ github.event.client_payload.pr_number }},
+              body: commentBody
             });
 
-  # Job 3: Cleanup Azure VMs (always runs, finds VMs by tags)
+  # Job 4: Cleanup Azure VMs (always runs, finds VMs by tags)
   cleanup-runners:
     needs: [provision-runners, test-on-azure-runners]
     if: always()
