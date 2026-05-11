@@ -105,30 +105,27 @@ echo ""
 echo "  Step 2: Cloning IIAB repository..."
 
 # Determine if this is an IIAB PR by checking PR_REPO
-if [[ "$PR_REPO" == iiab/iiab* ]] && [ -n "$PR_NUMBER" ]; then
+if [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_NUMBER" ]; then
     echo "Using IIAB PR #${PR_NUMBER} (from ${PR_REPO})"
-    # Clone and fetch PR
-    sudo git clone https://github.com/iiab/iiab.git /opt/iiab/iiab
+    # Clone and fetch PR (supports forks)
+    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
     cd /opt/iiab/iiab
     sudo git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
     sudo git checkout pr-${PR_NUMBER}
     echo "Checked out PR branch: $(git branch --show-current)"
     echo "Latest commit: $(git log -1 --oneline)"
-elif [[ "$PR_REPO" == iiab/iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
+elif [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
     echo "Using IIAB branch/ref: ${PR_REF} (from ${PR_REPO})"
     if [ -n "$PR_SHA" ]; then
         echo "Target commit: ${PR_SHA}"
     fi
-    # Clone and checkout the specific ref
-    sudo git clone https://github.com/iiab/iiab.git /opt/iiab/iiab
+    # Clone from the specified repo (supports forks like dahagag/iiab)
+    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
     cd /opt/iiab/iiab
-    sudo git fetch origin "${PR_REF}"
+    sudo git checkout "${PR_REF}"
     if [ -n "$PR_SHA" ]; then
-        # If we have a specific SHA, checkout that
+        # If we have a specific SHA, checkout that exact commit
         sudo git checkout "${PR_SHA}"
-    else
-        # Otherwise checkout the branch
-        sudo git checkout "${PR_REF}"
     fi
     echo "Checked out ref: $(git describe --always --all)"
     echo "Latest commit: $(git log -1 --oneline)"
