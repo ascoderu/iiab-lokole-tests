@@ -142,6 +142,35 @@ check_prerequisites() {
         echo -e "${RED}❌ Missing dependencies: ${missing[*]}${NC}"
         exit 1
     fi
+
+# Generate a short-lived GitHub Actions runner registration token.
+# This runs on the GitHub-hosted provisioning runner, never on the Azure VM.
+generate_runner_registration_token() {
+    echo -e "${BLUE}🔑 Generating temporary runner registration token...${NC}"
+
+    local response
+
+    response=$(curl --fail --silent --show-error --max-time 20 \
+        -X POST \
+        -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/ascoderu/iiab-lokole-tests/actions/runners/registration-token") || {
+        echo -e "${RED}❌ Failed to request runner registration token${NC}"
+        return 1
+    }
+
+    RUNNER_REGISTRATION_TOKEN=$(printf '%s' "$response" |
+        jq -er '.token | strings | select(length > 0)') || {
+        unset response
+        echo -e "${RED}❌ GitHub did not return a valid registration token${NC}"
+        return 1
+    }
+
+    unset response
+
+    echo -e "${GREEN}✓${NC} Temporary registration token obtained"
+}
     
     # Check Azure login
     if ! az account show &> /dev/null; then
