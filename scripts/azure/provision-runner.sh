@@ -127,21 +127,53 @@ echo ""
 # Check prerequisites
 check_prerequisites() {
     echo -e "${BLUE}🔍 Checking prerequisites...${NC}"
-    
+
     local missing=()
-    
+
     if ! command -v az &> /dev/null; then
         missing+=("azure-cli")
     fi
-    
+
     if ! command -v jq &> /dev/null; then
         missing+=("jq")
     fi
-    
+
     if [ ${#missing[@]} -gt 0 ]; then
         echo -e "${RED}❌ Missing dependencies: ${missing[*]}${NC}"
         exit 1
     fi
+
+    # Check Azure login
+    if ! az account show &> /dev/null; then
+        echo -e "${RED}❌ Not logged in to Azure${NC}"
+        echo "Run: ./scripts/azure/login.sh"
+        exit 1
+    fi
+
+    # Check GitHub token
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo -e "${YELLOW}⚠️  GITHUB_TOKEN not set${NC}"
+        echo "Set with: export GITHUB_TOKEN=\$INTEGRATION_TEST_PAT"
+
+        # Try to load from .env
+        if [ -f "${ROOT_DIR}/.env" ]; then
+            echo "Loading from .env..."
+            # shellcheck disable=SC1091
+            set -a
+            source "${ROOT_DIR}/.env"
+            set +a
+            export GITHUB_TOKEN="${INTEGRATION_TEST_PAT:-}"
+        fi
+
+        if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo -e "${RED}❌ GITHUB_TOKEN required${NC}"
+            exit 1
+        fi
+    fi
+
+    echo -e "${GREEN}✓${NC} Prerequisites OK"
+    echo ""
+}
 
 # Generate a short-lived GitHub Actions runner registration token.
 # This runs on the GitHub-hosted provisioning runner, never on the Azure VM.
@@ -171,43 +203,12 @@ generate_runner_registration_token() {
 
     echo -e "${GREEN}✓${NC} Temporary registration token obtained"
 }
-    
-    # Check Azure login
-    if ! az account show &> /dev/null; then
-        echo -e "${RED}❌ Not logged in to Azure${NC}"
-        echo "Run: ./scripts/azure/login.sh"
-        exit 1
-    fi
-    
-    # Check GitHub token
-    if [ -z "${GITHUB_TOKEN:-}" ]; then
-        echo -e "${YELLOW}⚠️  GITHUB_TOKEN not set${NC}"
-        echo "Set with: export GITHUB_TOKEN=\$INTEGRATION_TEST_PAT"
-        
-        # Try to load from .env
-        if [ -f "${ROOT_DIR}/.env" ]; then
-            echo "Loading from .env..."
-            # shellcheck disable=SC1091
-            set -a
-            source "${ROOT_DIR}/.env"
-            set +a
-            export GITHUB_TOKEN="${INTEGRATION_TEST_PAT:-}"
-        fi
-        
-        if [ -z "${GITHUB_TOKEN:-}" ]; then
-            echo -e "${RED}❌ GITHUB_TOKEN required${NC}"
-            exit 1
-        fi
-    fi
-    
-    echo -e "${GREEN}✓${NC} Prerequisites OK"
-    echo ""
-}
+
 
 # Generate SSH key pair for VM access
 generate_ssh_key() {
     local key_file="${ROOT_DIR}/.ssh/azure-runner-key"
-    
+
     if [ ! -f "$key_file" ]; then
         echo -e "${BLUE}🔑 Generating SSH key pair...${NC}"
         mkdir -p "$(dirname "$key_file")"
@@ -216,7 +217,7 @@ generate_ssh_key() {
     else
         echo -e "${GREEN}✓${NC} Using existing SSH key: $key_file"
     fi
-    
+
     SSH_PUBLIC_KEY=$(cat "${key_file}.pub")
     SSH_PRIVATE_KEY="$key_file"
     echo ""
@@ -255,6 +256,8 @@ deploy_vm() {
     echo ""
     
     # Start deployment with --no-wait (returns immediately)
+    # Generate the token immediately before Azure deployment.
+    generate_runner_registration_token || return 1
     az deployment group create \
         --name "$deployment_name" \
         --resource-group "$RESOURCE_GROUP" \
@@ -268,15 +271,18 @@ deploy_vm() {
             adminUsername="azureuser" \
             sshPublicKey="$SSH_PUBLIC_KEY" \
             githubRepository="ascoderu/iiab-lokole-tests" \
-            githubToken="$GITHUB_TOKEN" \
+            runnerRegistrationToken="$RUNNER_REGISTRATION_TOKEN" \
             runnerLabels="$runner_labels" \
             prNumber="$PR_NUMBER" \
             runId="$RUN_ID" \
         --no-wait || {
+        unset RUNNER_REGISTRATION_TOKEN
         echo -e "${RED}❌ Failed to initiate VM deployment${NC}"
         exit 1
     }
     
+    unset RUNNER_REGISTRATION_TOKEN
+        
     echo "Polling deployment status..."
     local start_time=$(date +%s)
     local max_wait=900  # 15 minutes (matches job timeout)
