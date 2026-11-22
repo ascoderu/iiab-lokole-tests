@@ -12,6 +12,9 @@ concurrency:
   group: test-on-merge
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   # Job 0: Generate matrix from ubuntu-versions.yml
   generate-matrix:
@@ -75,6 +78,9 @@ jobs:
 
   # Job 2: Run tests on Azure VM
   test-merged-version:
+    permissions:
+      contents: read
+      issues: write
     needs: [generate-matrix, provision-runner]
     runs-on:
       - self-hosted
