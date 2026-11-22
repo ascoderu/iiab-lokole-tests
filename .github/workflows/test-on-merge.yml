@@ -30,9 +30,14 @@ jobs:
 
       - name: Generate matrix from ubuntu-versions.yml
         id: set-matrix
+        env:
+          INCLUDE_UPCOMING: ${{ github.event.client_payload.include_upcoming || 'false' }}
         run: |
           # Check if include_upcoming is requested via client_payload
-          INCLUDE_UPCOMING="${{ github.event.client_payload.include_upcoming || 'false' }}"
+          if [[ "$INCLUDE_UPCOMING" != "true" && "$INCLUDE_UPCOMING" != "false" ]]; then
+            echo "Error: include_upcoming must be true or false"
+            exit 1
+          fi
 
           if [ "$INCLUDE_UPCOMING" = "true" ]; then
             echo "Including upcoming versions (pre-release images)..."
@@ -96,32 +101,66 @@ jobs:
       - name: Checkout test repository
         uses: actions/checkout@v4
 
+
       - name: Extract merge details
         id: merge_details
+        env:
+          EVENT_BRANCH: ${{ github.event.client_payload.branch }}
+          EVENT_SHA: ${{ github.event.client_payload.sha }}
+          EVENT_REPO: ${{ github.event.client_payload.repo }}
         run: |
-          BRANCH="${{ github.event.client_payload.branch }}"
-          SHA="${{ github.event.client_payload.sha }}"
-          REPO="${{ github.event.client_payload.repo }}"
-          
-          echo "branch=${BRANCH:-master}" >> $GITHUB_OUTPUT
-          echo "repo=$REPO" >> $GITHUB_OUTPUT
-          
-          # If SHA not provided, fetch it from the branch
-          if [ -z "$SHA" ]; then
-            # Ensure repo URL doesn't end up with .git.git
-            REPO_URL="https://github.com/${REPO}"
-            [[ "$REPO_URL" != *.git ]] && REPO_URL="${REPO_URL}.git"
-            SHA=$(git ls-remote "$REPO_URL" "refs/heads/${BRANCH:-master}" | awk '{print $1}')
-            echo "Fetched SHA from ${REPO}/${BRANCH:-master}: $SHA"
+          set -euo pipefail
+
+          BRANCH="${EVENT_BRANCH:-master}"
+          SHA="${EVENT_SHA:-}"
+          REPO="${EVENT_REPO:-}"
+
+          # Accept only the two expected source repositories.
+          if [[ "$REPO" != "ascoderu/lokole" && "$REPO" != "iiab/iiab" ]]; then
+            echo "Error: Unexpected repository: $REPO"
+            exit 1
           fi
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+          # Validate branch name before using it in Git commands.
+          if [[ ! "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] ||
+             [[ "$BRANCH" == -* ]] ||
+             [[ "$BRANCH" == *".."* ]] ||
+             [[ "$BRANCH" == *"//"* ]]; then
+            echo "Error: Invalid branch name"
+            exit 1
+          fi
+
+          # Validate commit SHA when provided.
+          if [[ -n "$SHA" && ! "$SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Error: Invalid commit SHA"
+            exit 1
+          fi
+
+          # Fetch the commit SHA if it was not provided.
+          if [ -z "$SHA" ]; then
+            REPO_URL="https://github.com/${REPO}.git"
+            SHA=$(git ls-remote "$REPO_URL" "refs/heads/${BRANCH}" | awk 'NR==1 {print $1}')
+
+            if [[ ! "$SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              echo "Error: Could not obtain a valid commit SHA"
+              exit 1
+            fi
+
+            echo "Fetched SHA from ${REPO}/${BRANCH}: $SHA"
+          fi
+
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
 
       - name: Get dependency master SHAs
         id: deps_sha
+        env:
+          REPO: ${{ steps.merge_details.outputs.repo }}
+          BRANCH: ${{ steps.merge_details.outputs.branch }}
         run: |
           # Fetch master branches if not testing them directly
-          REPO="${{ steps.merge_details.outputs.repo }}"
-          BRANCH="${{ steps.merge_details.outputs.branch }}"
           
           if [[ "$REPO" == *"iiab"* ]]; then
             # Testing IIAB merge - get Lokole master
@@ -144,33 +183,43 @@ jobs:
 
       - name: Run direct IIAB installation with merged version
         id: test
+        env:
+          REPO: ${{ steps.merge_details.outputs.repo }}
+          BRANCH: ${{ steps.merge_details.outputs.branch }}
+          SHA: ${{ steps.merge_details.outputs.sha }}
+          LOKOLE_SHA: ${{ steps.deps_sha.outputs.lokole_sha }}
         run: |
-          REPO="${{ steps.merge_details.outputs.repo }}"
-
           if [[ "$REPO" == *"lokole"* ]]; then
             # Test merged Lokole commit on Azure VM with IIAB master
             ./scripts/scenarios/direct-install.sh \
-              --pr-repo "${{ steps.merge_details.outputs.repo }}" \
-              --pr-sha "${{ steps.merge_details.outputs.sha }}" \
-              --lokole-commit "${{ steps.merge_details.outputs.sha }}"
+              --pr-repo "$REPO" \
+              --pr-sha "$SHA" \
+              --lokole-commit "$SHA"
           elif [[ "$REPO" == *"iiab"* ]]; then
             # Test merged IIAB branch on Azure VM with Lokole master
             ./scripts/scenarios/direct-install.sh \
-              --pr-repo "${{ steps.merge_details.outputs.repo }}" \
-              --pr-sha "${{ steps.merge_details.outputs.sha }}" \
-              --pr-ref "${{ steps.merge_details.outputs.branch }}" \
-              --lokole-commit "${{ steps.deps_sha.outputs.lokole_sha }}" \
+              --pr-repo "$REPO" \
+              --pr-sha "$SHA" \
+              --pr-ref "$BRANCH" \
+              --lokole-commit "$LOKOLE_SHA" \
               --lokole-repo "ascoderu/lokole"
+          else
+            echo "Error: Unexpected repository: $REPO"
+            exit 1
           fi
 
       - name: Generate PR comment body
         if: always()
+        env:
+          REPO: ${{ steps.merge_details.outputs.repo }}
+          BRANCH: ${{ steps.merge_details.outputs.branch }}
+          UBUNTU_VERSION: ${{ matrix.ubuntu_version }}
         run: |
           ./scripts/reports/generate-pr-comment.sh \
-            "pr-comment-ubuntu-${{ matrix.ubuntu_version }}.md" \
+            "pr-comment-ubuntu-${UBUNTU_VERSION}.md" \
             lokole-verification.json \
-            "${{ steps.merge_details.outputs.repo }}" \
-            "${{ steps.merge_details.outputs.branch }}"
+            "$REPO" \
+            "$BRANCH"
 
       - name: Upload test results
         if: always()
@@ -189,16 +238,34 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const payload = context.payload.client_payload;
+            const payload = context.payload?.client_payload ?? {};
+
+            // Accept only the expected repositories.
+            const repo = ['ascoderu/lokole', 'iiab/iiab'].includes(payload.repo)
+              ? payload.repo
+              : 'unknown';
+
+            // Validate branch and commit data before using them.
+            const branch = typeof payload.branch === 'string' &&
+              /^[A-Za-z0-9._/-]{1,200}$/.test(payload.branch)
+                ? payload.branch
+                : 'unknown';
+
+            const sha = typeof payload.sha === 'string' &&
+              /^[0-9a-fA-F]{40}$/.test(payload.sha)
+                ? payload.sha
+                : 'unknown';
+
+            const shortSha = sha === 'unknown' ? 'unknown' : sha.substring(0, 7);
 
             let body = '## 🔴 Post-Merge Integration Test Failed\n\n';
-            body += `**Repository:** ${payload.repo}\n`;
-            body += `**Branch:** ${payload.branch}\n`;
-            body += `**Commit:** ${payload.sha}\n`;
+            body += `**Repository:** ${repo}\n`;
+            body += `**Branch:** ${branch}\n`;
+            body += `**Commit:** ${shortSha}\n`;
             body += `**Ubuntu:** ${{ matrix.ubuntu_version }} (Python ${{ matrix.python_expected }})\n`;
             body += `**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n`;
 
-            // Try to read JSON report
+            // Try to read JSON report.
             const jsonFiles = fs.readdirSync('.').filter(f => f.includes('verification') && f.endsWith('.json'));
             if (jsonFiles.length > 0) {
               const jsonContent = JSON.parse(fs.readFileSync(jsonFiles[0], 'utf8'));
@@ -208,7 +275,7 @@ jobs:
               body += `- **Summary:** ${jsonContent.summary}\n\n`;
             }
 
-            // Include markdown report
+            // Include markdown report.
             const mdFiles = fs.readdirSync('.').filter(f => f.includes('pr-comment') && f.endsWith('.md'));
             if (mdFiles.length > 0) {
               body += fs.readFileSync(mdFiles[0], 'utf8');
@@ -223,7 +290,7 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Post-merge test failure: ${payload.repo}@${payload.sha.substring(0, 7)}`,
+              title: `Post-merge test failure: ${repo}@${shortSha}`,
               body: body,
               labels: ['bug', 'automated-test-failure', 'post-merge']
             });
