@@ -5,6 +5,7 @@
 # Usage: ./direct-install.sh [OPTIONS]
 #
 # Options:
+#   --iiab-commit <sha>     Exact IIAB git commit to install
 #   --vm-name <name>         Name identifier for verification (default: direct-install)
 #   --pr-repo <repo>         PR repository (e.g., iiab/iiab)
 #   --pr-ref <ref>           PR branch/ref
@@ -22,6 +23,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # Defaults
 VM_NAME="direct-install"
 IIAB_PR=""
+IIAB_COMMIT=""
 LOKOLE_COMMIT=""
 LOKOLE_VERSION=""
 LOKOLE_REPO="ascoderu/lokole"
@@ -51,6 +53,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --iiab-pr)
             IIAB_PR="$2"
+            shift 2
+            ;;
+        --iiab-commit)
+            IIAB_COMMIT="$2"
             shift 2
             ;;
         --lokole-commit)
@@ -85,6 +91,7 @@ echo "PR Ref: ${PR_REF}"
 [ -n "$PR_SHA" ] && echo "PR SHA: ${PR_SHA}"
 [ -n "$PR_NUMBER" ] && echo "PR Number: #${PR_NUMBER}"
 [ -n "$IIAB_PR" ] && echo "IIAB PR: #${IIAB_PR}"
+[ -n "$IIAB_COMMIT" ] && echo "IIAB Commit: ${IIAB_COMMIT}"
 [ -n "$LOKOLE_COMMIT" ] && echo "Lokole Commit: ${LOKOLE_COMMIT}"
 [ -n "$LOKOLE_REPO" ] && [ "$LOKOLE_REPO" != "ascoderu/lokole" ] && echo "Lokole Repo: ${LOKOLE_REPO}"
 [ -n "$LOKOLE_VERSION" ] && echo "Lokole Version: ${LOKOLE_VERSION}"
@@ -98,53 +105,82 @@ echo "📦 Step 1: Installing system dependencies..."
 sudo apt-get update
 sudo apt-get install -y git curl wget build-essential
 
+
 #
-# STEP 2: Clone IIAB (optionally from PR branch)
+# STEP 2: Clone IIAB (using an exact commit when supplied)
 #
 echo ""
 echo "  Step 2: Cloning IIAB repository..."
 
-# Determine if this is an IIAB PR by checking PR_REPO
-# Priority: PR_REF (works for forks + upstream) > PR_NUMBER (upstream only)
-if [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
-    echo "Using IIAB branch/ref: ${PR_REF} (from ${PR_REPO})"
-    if [ -n "$PR_SHA" ]; then
-        echo "Target commit: ${PR_SHA}"
-    fi
-    # Clone from the specified repo (supports forks like dahagag/iiab)
-    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
-    cd /opt/iiab/iiab
-    sudo git checkout "${PR_REF}"
-    if [ -n "$PR_SHA" ]; then
-        # If we have a specific SHA, checkout that exact commit
-        sudo git checkout "${PR_SHA}"
-    fi
-    echo "Checked out ref: $(git describe --always --all)"
-    echo "Latest commit: $(git log -1 --oneline)"
-elif [[ "$PR_REPO" == *iiab* ]] && [ -n "$PR_NUMBER" ]; then
-    echo "Using IIAB PR #${PR_NUMBER} (from ${PR_REPO})"
-    # Clone and fetch PR (only works for upstream, not forks)
-    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
-    cd /opt/iiab/iiab
-    sudo git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
-    sudo git checkout pr-${PR_NUMBER}
-    echo "Checked out PR branch: $(git branch --show-current)"
-    echo "Latest commit: $(git log -1 --oneline)"
-elif [ -n "$IIAB_PR" ]; then
-    # Legacy support for --iiab-pr parameter
-    echo "Using IIAB PR #${IIAB_PR}"
-    sudo git clone https://github.com/iiab/iiab.git /opt/iiab/iiab
-    cd /opt/iiab/iiab
-    sudo git fetch origin pull/${IIAB_PR}/head:pr-${IIAB_PR}
-    sudo git checkout pr-${IIAB_PR}
-    echo "Checked out PR branch: $(git branch --show-current)"
-    echo "Latest commit: $(git log -1 --oneline)"
-else
-    echo "Using IIAB master branch"
-    sudo git clone --depth 1 https://github.com/iiab/iiab.git /opt/iiab/iiab
-    cd /opt/iiab/iiab
-    echo "Latest commit: $(git log -1 --oneline)"
+# Validate commit SHAs before using them.
+if [ -n "$IIAB_COMMIT" ] && [[ ! "$IIAB_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "Error: Invalid IIAB commit SHA"
+    exit 1
 fi
+
+if [ -n "$PR_SHA" ] && [[ ! "$PR_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "Error: Invalid PR commit SHA"
+    exit 1
+fi
+
+# Priority:
+# 1. Exact merged IIAB commit (PR_SHA)
+# 2. IIAB PR branch/ref
+# 3. IIAB PR number (legacy support)
+# 4. Exact IIAB dependency commit (IIAB_COMMIT)
+# 5. Latest IIAB master (fallback)
+
+if [[ "$PR_REPO" == *iiab* ]]; then
+
+    echo "Using IIAB repository: ${PR_REPO}"
+    sudo git clone "https://github.com/${PR_REPO}.git" /opt/iiab/iiab
+    cd /opt/iiab/iiab
+
+    if [ -n "$PR_SHA" ]; then
+        echo "Checking out exact merged IIAB commit: ${PR_SHA}"
+        sudo git fetch origin "$PR_SHA"
+        sudo git checkout --detach FETCH_HEAD
+
+    elif [ -n "$PR_REF" ] && [ "$PR_REF" != "master" ]; then
+        echo "Using IIAB branch/ref: ${PR_REF}"
+        sudo git checkout "$PR_REF"
+
+    elif [ -n "$PR_NUMBER" ]; then
+        echo "Using IIAB PR #${PR_NUMBER}"
+        sudo git fetch origin "pull/${PR_NUMBER}/head"
+        sudo git checkout --detach FETCH_HEAD
+
+    else
+        echo "Using IIAB master branch"
+    fi
+
+elif [ -n "$IIAB_COMMIT" ]; then
+
+    echo "Installing exact IIAB dependency commit: ${IIAB_COMMIT}"
+
+    sudo git clone --no-checkout --depth 1 \
+        https://github.com/iiab/iiab.git /opt/iiab/iiab
+
+    cd /opt/iiab/iiab
+
+    sudo git fetch --depth 1 origin "$IIAB_COMMIT"
+    sudo git checkout --detach FETCH_HEAD
+
+else
+
+    echo "Using latest IIAB master branch"
+
+    sudo git clone --depth 1 \
+        https://github.com/iiab/iiab.git /opt/iiab/iiab
+
+    cd /opt/iiab/iiab
+
+fi
+
+echo "IIAB commit installed:"
+sudo git log -1 --format='%H'
+echo "IIAB description:"
+sudo git log -1 --oneline
 
 #
 # STEP 3: Configure IIAB with Lokole settings
