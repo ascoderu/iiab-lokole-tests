@@ -36,9 +36,9 @@ param sshPublicKey string
 @description('GitHub repository for runner registration (format: owner/repo)')
 param githubRepository string = 'ascoderu/iiab-lokole-tests'
 
-@description('GitHub Personal Access Token for runner registration')
+@description('Short-lived GitHub Actions runner registration token')
 @secure()
-param githubToken string
+param runnerRegistrationToken string
 
 @description('Runner labels (comma-separated)')
 param runnerLabels string = 'azure,self-hosted'
@@ -323,10 +323,11 @@ resource vmExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' =
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
     protectedSettings: {
-      script: base64(replace(replace(replace(loadTextContent('../../scripts/azure/runner-setup-wrapper.sh'), '__GITHUB_TOKEN__', githubToken), '__GITHUB_REPO__', githubRepository), '__RUNNER_LABELS__', runnerLabels))
+      script: base64(replace(replace(replace(loadTextContent('../../scripts/azure/runner-setup-wrapper.sh'), '__RUNNER_REGISTRATION_TOKEN__', runnerRegistrationToken), '__GITHUB_REPO__', githubRepository), '__RUNNER_LABELS__', runnerLabels))
     }
   }
 }
+
 
 // Outputs
 output vmName string = vm.name
